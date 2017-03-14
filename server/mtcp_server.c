@@ -114,9 +114,10 @@ static void *send_thread(void *client_arg){
 
 static void *receive_thread(void *client_arg){
 	unsigned char buf[4];
+	struct arg_list *arg = (struct arg_list *)client_arg;
 
 	// monitor for the SYN
-	if(recvfrom(client_arg.socket_fd, buf, sizeof(buf), 0, client_arg.client_addr, sizeof(client_arg.client_addr)) < 0)
+	if(recvfrom(arg->socket_fd, buf, sizeof(buf), 0, arg->client_addr, sizeof(arg->client_addr)) < 0)
 	{
 		printf("receive error\n");
 		exit(1);
