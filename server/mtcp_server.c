@@ -96,7 +96,7 @@ static void *send_thread(void *client_arg){
 
 	// send SYN-ACK to client
 	sendto(arg->socket, SYN_ACK.buffer, sizeof(SYN_ACK.buffer), 0, (struct sockaddr*)arg->client_addr, (socklen_t)sizeof(arg->client_addr));
-
+	printf("SYN-ACK sent");
 	//wait until ACK accept
 	pthread_mutex_lock(&send_thread_sig_mutex);
 	// while(!send_thread_sig) {
@@ -115,7 +115,7 @@ static void *send_thread(void *client_arg){
 	pthread_mutex_unlock(&send_thread_sig_mutex);
 
 	while(1) {
-		
+
 	}
 }
 
@@ -143,10 +143,12 @@ static void *receive_thread(void *client_arg){
 		switch(header.mode) {
 			case '0': // SYN
 				// when SYN received
+				printf("SYN received");
 				pthread_cond_signal(&send_thread_sig);
 				break;
 			case '4': // ACK
 				// when ACK received
+				printf("ACK received");
 				pthread_cond_signal(&send_thread_sig);
 				break;
 			case '5': //DATA
