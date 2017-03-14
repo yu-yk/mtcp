@@ -62,7 +62,7 @@ void mtcp_accept(int socket_fd, struct sockaddr_in *client_addr){
 
 int mtcp_read(int socket_fd, unsigned char *buf, int buf_len){
 
-	
+	stru
 
 }
 
@@ -120,7 +120,7 @@ static void *receive_thread(void *client_arg){
 		mtcpheader header;
 		header.mode = buf[0] >> 4;
 		header.buffer[0] = buf[0] & 0x0F;
-		memcpy(header.&seq, header.buffer, 4);
+		memcpy(&header.seq, header.buffer, 4);
 		header.seq = ntohl(header.seq);
 		switch(mode) {
 			case '1': // SYN-ACK
