@@ -19,7 +19,7 @@ typedef struct mtcpheaders
 struct arg_list
 {
 	int socket;
-	struct sockaddr_in *client_addr; 
+	struct sockaddr_in *client_addr;
 };
 
 /* ThreadID for Sending Thread and Receiving Thread */
@@ -38,8 +38,8 @@ static pthread_mutex_t info_mutex = PTHREAD_MUTEX_INITIALIZER;
 static void *send_thread();
 static void *receive_thread();
 /****server_addr or client_addr?***/
-void mtcp_accept(int socket_fd, struct sockaddr_in *client_addr){
 
+void mtcp_accept(int socket_fd, struct sockaddr_in *client_addr){
 	// accept the mtcp call by client
 	struct arg_list client_arg;
 	client_arg.socket = socket_fd;
@@ -49,13 +49,11 @@ void mtcp_accept(int socket_fd, struct sockaddr_in *client_addr){
 	if (rpc < 0) printf("create receving thread error\n");
 	int spc = pthread_create(&send_thread_pid, NULL, send_thread, (void *)&client_arg);
 	if (spc < 0) printf("create sending thread error\n");
-	
+
 
 	// waiting
 	pthread_mutex_lock(&app_thread_sig_mutex);
-	// while(!app_thread_sig) {
 	pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex); // wait
-	// }
 	pthread_mutex_unlock(&app_thread_sig_mutex);
 
 	return;
@@ -65,7 +63,7 @@ void mtcp_accept(int socket_fd, struct sockaddr_in *client_addr){
 int mtcp_read(int socket_fd, unsigned char *buf, int buf_len){
 	//pthread_cond_signal(&send_thread_sig);
 
-	
+
 	return 0;
 }
 
@@ -76,15 +74,13 @@ void mtcp_close(int socket_fd){
 static void *send_thread(void *client_arg){
 	struct arg_list *arg = (struct arg_list *)client_arg;
 
-	 /************************************************************************
-	 *********************** Three Way Handshake *****************************
-	 *************************************************************************/
+	/************************************************************************
+	*********************** Three Way Handshake *****************************
+	*************************************************************************/
 
 	//waiti until SYN accept
 	pthread_mutex_lock(&send_thread_sig_mutex);
-	// while(!send_thread_sig) {
 	pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
-	// }
 	pthread_mutex_unlock(&send_thread_sig_mutex);
 
 	// construct mtcp SYN-ACK header
@@ -97,11 +93,10 @@ static void *send_thread(void *client_arg){
 	// send SYN-ACK to client
 	sendto(arg->socket, SYN_ACK.buffer, sizeof(SYN_ACK.buffer), 0, (struct sockaddr*)arg->client_addr, (socklen_t)sizeof(arg->client_addr));
 	printf("SYN-ACK sent");
+
 	//wait until ACK accept
 	pthread_mutex_lock(&send_thread_sig_mutex);
-	// while(!send_thread_sig) {
 	pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
-	// }
 	pthread_mutex_unlock(&send_thread_sig_mutex);
 
 	// wake up main thread
@@ -109,9 +104,7 @@ static void *send_thread(void *client_arg){
 
 	//wait until ACK accept
 	pthread_mutex_lock(&send_thread_sig_mutex);
-	// while(!send_thread_sig) {
 	pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
-	// }
 	pthread_mutex_unlock(&send_thread_sig_mutex);
 
 	while(1) {
@@ -122,18 +115,17 @@ static void *send_thread(void *client_arg){
 static void *receive_thread(void *client_arg){
 	unsigned char buf[4];
 	struct arg_list *arg = (struct arg_list *)client_arg;
-
 	socklen_t addrlen = sizeof(arg->client_addr);
-
-	// monitor for the SYN
-	if(recvfrom(arg->socket, buf, sizeof(buf), 0, (struct sockaddr*)arg->client_addr, &addrlen) < 0)
-	{
-		printf("receive error\n");
-		exit(1);
-	} 
 
 	// keep monitoring
 	while (1) {
+		// monitor for the SYN
+		if(recvfrom(arg->socket, buf, sizeof(buf), 0, (struct sockaddr*)arg->client_addr, &addrlen) < 0)
+		{
+			printf("receive error\n");
+			exit(1);
+		}
+
 		// decode header
 		mtcpheader header;
 		header.mode = buf[0] >> 4;
@@ -142,21 +134,21 @@ static void *receive_thread(void *client_arg){
 		header.seq = ntohl(header.seq);
 		switch(header.mode) {
 			case '0': // SYN
-				// when SYN received
-				printf("SYN received");
-				pthread_cond_signal(&send_thread_sig);
-				break;
+			// when SYN received
+			printf("SYN received");
+			pthread_cond_signal(&send_thread_sig);
+			break;
 			case '4': // ACK
-				// when ACK received
-				printf("ACK received");
-				pthread_cond_signal(&send_thread_sig);
-				break;
+			// when ACK received
+			printf("ACK received");
+			pthread_cond_signal(&send_thread_sig);
+			break;
 			case '5': //DATA
-				// when DATA received
-				pthread_cond_signal(&send_thread_sig);
-				break;
+			// when DATA received
+			pthread_cond_signal(&send_thread_sig);
+			break;
 			default:
-				printf("receive switch error\n");
+			printf("receive switch error\n");
 		}
 	}
 
