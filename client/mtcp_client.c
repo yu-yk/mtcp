@@ -64,17 +64,13 @@ void mtcp_connect(int socket_fd, struct sockaddr_in *server_addr){
 		printf("create receivng thread error\n");
 	}
 
-	while (1) {
-		pthread_cond_signal(&send_thread_sig);
-	}
+	// sleep 1 second for the thread creation
+	sleep(1);
 	// wake up sending thread
 	pthread_cond_signal(&send_thread_sig);
-
 	// then waiting
 	pthread_mutex_lock(&app_thread_sig_mutex);
-	// while(!app_thread_sig) {
-		pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex); // wait
-	// }
+	pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex);
 	pthread_mutex_unlock(&app_thread_sig_mutex);
 
 	return;
@@ -120,9 +116,7 @@ static void *send_thread(void *server_arg){
 
 	// waiting again
 	pthread_mutex_lock(&send_thread_sig_mutex);
-	// while(!send_thread_sig) {
-		pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
-	// }
+	pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
 	pthread_mutex_unlock(&send_thread_sig_mutex);
 
 	// construct mtcp ACK header
@@ -142,8 +136,11 @@ static void *send_thread(void *server_arg){
 	/*************************************************************************
 	 ********************* End of Three Way Handshake ************************
 	 *************************************************************************/
+
 	 while (1) {
+	 	/* wait for send data */
 	 }
+
 }
 
 static void *receive_thread(void *server_arg){
@@ -151,10 +148,7 @@ static void *receive_thread(void *server_arg){
 
 	unsigned char buf[4];
 	struct arg_list *arg = (struct arg_list *)server_arg;
-
 	socklen_t addrlen = sizeof(arg->server_addr);
-// if(recvfrom(socket_fd, buffer, 2, 0,
-// 						(struct sockaddr*)&dest_addr, &len) == -1)
 
 	// monitor for the SYN-ACK
 	errno = EOK;
