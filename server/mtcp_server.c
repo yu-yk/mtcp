@@ -51,9 +51,9 @@ void mtcp_accept(int socket_fd, struct sockaddr_in *client_addr){
 
 	// waiting
 	pthread_mutex_lock(&app_thread_sig_mutex);
-	while(!app_thread_sig) {
-		pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex); // wait
-	}
+	// while(!app_thread_sig) {
+	pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex); // wait
+	// }
 	pthread_mutex_unlock(&app_thread_sig_mutex);
 
 	return;
@@ -77,9 +77,9 @@ static void *send_thread(void *client_arg){
 
 	//waiti until SYN accept
 	pthread_mutex_lock(&send_thread_sig_mutex);
-	while(!send_thread_sig) {
-		pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
-	}
+	// while(!send_thread_sig) {
+	pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
+	// }
 	pthread_mutex_unlock(&send_thread_sig_mutex);
 
 	// construct mtcp SYN-ACK header
@@ -94,9 +94,9 @@ static void *send_thread(void *client_arg){
 
 	//wait until ACK accept
 	pthread_mutex_lock(&send_thread_sig_mutex);
-	while(!send_thread_sig) {
-		pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
-	}
+	// while(!send_thread_sig) {
+	pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
+	// }
 	pthread_mutex_unlock(&send_thread_sig_mutex);
 
 	// wake up main thread
