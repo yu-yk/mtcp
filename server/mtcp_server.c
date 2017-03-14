@@ -72,6 +72,8 @@ void mtcp_close(int socket_fd){
 }
 
 static void *send_thread(void *client_arg){
+	struct arg_list *arg = (struct arg_list *)client_arg;
+
 	 /************************************************************************
 	 *********************** Three Way Handshake *****************************
 	 *************************************************************************/
@@ -87,11 +89,11 @@ static void *send_thread(void *client_arg){
 	mtcpheader SYN_ACK;
 	SYN_ACK.seq = 1;
 	SYN_ACK.mode = '1';
-	memcpy(SYN_ACK.buffer, SYN_ACK.&seq, 4);
+	memcpy(SYN_ACK.buffer, &SYN_ACK.seq, 4);
 	SYN_ACK.buffer[0] = SYN_ACK.buffer[0] | (SYN_ACK.mode << 4);
 
 	// send SYN-ACK to client
-	sendto(client_arg.socket_fd, SYN_ACK.buffer, strlen(SYN_ACK.buffer)+1, 0, client_arg.client_addr, sizeof(client_arg.client_addr));
+	sendto(arg->socket, SYN_ACK.buffer, strlen(SYN_ACK.buffer)+1, 0, arg->client_addr, sizeof(arg->client_addr));
 
 	//wait until ACK accept
 	pthread_mutex_lock(&send_thread_sig_mutex);
@@ -117,7 +119,7 @@ static void *receive_thread(void *client_arg){
 	struct arg_list *arg = (struct arg_list *)client_arg;
 
 	// monitor for the SYN
-	if(recvfrom(arg->socket_fd, buf, sizeof(buf), 0, arg->client_addr, sizeof(arg->client_addr)) < 0)
+	if(recvfrom(arg->socket, buf, sizeof(buf), 0, arg->client_addr, sizeof(arg->client_addr)) < 0)
 	{
 		printf("receive error\n");
 		exit(1);
@@ -131,7 +133,7 @@ static void *receive_thread(void *client_arg){
 		header.buffer[0] = buf[0] & 0x0F;
 		memcpy(&header.seq, header.buffer, 4);
 		header.seq = ntohl(header.seq);
-		switch(hearder.mode) {
+		switch(header.mode) {
 			case '0': // SYN
 				// when SYN received
 				pthread_cond_signal(&send_thread_sig);
