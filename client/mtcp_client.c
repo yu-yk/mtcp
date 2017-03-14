@@ -83,7 +83,7 @@ static void *send_thread(void *server_arg){
 	}
 	pthread_mutex_unlock(&send_thread_sig_mutex);
 
-	// construct mtcp header
+	// construct mtcp SYN header
 	mtcpheader SYN;
 	SYN.seq = 0;
 	SYN.mode = '0';
@@ -100,7 +100,7 @@ static void *send_thread(void *server_arg){
 	}
 	pthread_mutex_unlock(&send_thread_sig_mutex);
 
-	// send ACK to server
+	// construct mtcp ACK header
 	mtcpheader ACK;
 	ACK.seq = 1;
 	ACK.mode = '4';
@@ -137,15 +137,13 @@ static void *receive_thread(void *server_arg){
 		memcpy(header.&seq, header.buffer, 4);
 		header.seq = ntohl(header.seq);
 		switch(mode) {
-			case '1': // SYN-ACK
-				// when SYN-ACK received
+			case '0': // SYN
+				// when SYN received
 				pthread_cond_signal(&send_thread_sig);
 				break;
-			case '3': // FIN-ACK
-
-				break;
 			case '4': // ACK
-
+				// when ACK received
+				pthread_cond_signal(&send_thread_sig);
 				break;
 			default:
 				printf("receive switch error\n");
