@@ -7,6 +7,11 @@
 #include <unistd.h>
 #include <errno.h>
 #include "mtcp_client.h"
+#include <errno.h>
+
+#ifndef EOK
+#define  EOK 6
+#endif
 
 /* -------------------- Global Variables -------------------- */
 typedef struct mtcpheaders
@@ -49,7 +54,9 @@ void mtcp_connect(int socket_fd, struct sockaddr_in *server_addr){
 
 
 	int spc = pthread_create(&send_thread_pid, NULL, send_thread, (void *)&server_arg);
+	if (spc < 0) printf("create sending thread error\n");
 	int rpc = pthread_create(&recv_thread_pid, NULL, receive_thread, (void *)&server_arg);
+	if (rpc < 0) printf("create receivng thread error\n");
 
 	// wake up sending thread
 	pthread_cond_signal(&send_thread_sig);
@@ -96,7 +103,7 @@ static void *send_thread(void *server_arg){
 	SYN.buffer[0] = SYN.buffer[0] | (SYN.mode << 4);
 
 	// send SYN to server
-	sendto(arg->socket, SYN.buffer, strlen(SYN.buffer)+1, 0, arg->server_addr, sizeof(arg->server_addr));
+	sendto(arg->socket, SYN.buffer, sizeof(SYN.buffer), 0, (struct sockaddr*)arg->server_addr, (socklen_t)sizeof(arg->server_addr));
 
 	// waiting again
 	pthread_mutex_lock(&send_thread_sig_mutex);
@@ -113,23 +120,32 @@ static void *send_thread(void *server_arg){
 	ACK.buffer[0] = ACK.buffer[0] | (ACK.mode << 4);
 
 	// send ACK to server
-	sendto(arg->socket, ACK.buffer, strlen(ACK.buffer)+1, 0, arg->server_addr, sizeof(arg->server_addr));
+	sendto(arg->socket, ACK.buffer, sizeof(ACK.buffer), 0, (struct sockaddr*)arg->server_addr, (socklen_t)sizeof(arg->server_addr));
 
 	// wake up main thread
 	pthread_cond_signal(&app_thread_sig);
 	/*************************************************************************
 	 ********************* End of Three Way Handshake ************************
 	 *************************************************************************/
-
+	 while (1) {
+	 	/* code */
+	 }
 }
 
 static void *receive_thread(void *server_arg){
 	unsigned char buf[4];
 	struct arg_list *arg = (struct arg_list *)server_arg;
 
+	socklen_t addrlen = sizeof(arg->server_addr);
+// if(recvfrom(socket_fd, buffer, 2, 0,
+// 						(struct sockaddr*)&dest_addr, &len) == -1)
+
 	// monitor for the SYN-ACK
-	if(recvfrom(arg->socket, buf, sizeof(buf), 0, arg->server_addr, sizeof(arg->server_addr)) < 0)
+	errno = EOK;
+	if(recvfrom(arg->socket, buf, sizeof(buf), 0, (struct sockaddr*)arg->server_addr, &addrlen) < 0)
 	{
+		printf("error%d\n", errno);
+		printf("%s\n", strerror(errno));
 		printf("receive error\n");
 		exit(1);
 	}
