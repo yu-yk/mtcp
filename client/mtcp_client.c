@@ -142,15 +142,10 @@ static void *receive_thread(void *server_arg){
 		header.buffer[0] = buf[0] & 0x0F;
 		memcpy(&header.seq, header.buffer, 4);
 		header.seq = ntohl(header.seq);
-<<<<<<< HEAD
-		switch(mode) {
-			case '0': // SYN
-				// when SYN received
-=======
+
 		switch(header.mode) {
 			case '1': // SYN-ACK
 				// when SYN-ACK received
->>>>>>> origin/master
 				pthread_cond_signal(&send_thread_sig);
 				break;
 			case '4': // ACK
