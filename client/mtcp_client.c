@@ -111,6 +111,7 @@ static void *send_thread(void *server_arg){
 	printf("SYN sent\n");
 
 	// waiting again
+	printf("send_thread waiting\n");
 	pthread_mutex_lock(&send_thread_sig_mutex);
 	pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
 	pthread_mutex_unlock(&send_thread_sig_mutex);
@@ -129,6 +130,7 @@ static void *send_thread(void *server_arg){
 
 	// wake up main thread
 	pthread_cond_signal(&app_thread_sig);
+	printf("Three Way Handshake established\n");
 	/*************************************************************************
 	********************* End of Three Way Handshake ************************
 	*************************************************************************/
