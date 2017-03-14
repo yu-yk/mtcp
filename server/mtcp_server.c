@@ -46,7 +46,9 @@ void mtcp_accept(int socket_fd, struct sockaddr_in *client_addr){
 	client_arg.client_addr = client_addr;
 	//create thread to handle mtcp_accept()
 	int rpc = pthread_create(&recv_thread_pid, NULL, receive_thread, (void *)&client_arg);
+	if (rpc < 0) printf("create receving thread error\n");
 	int spc = pthread_create(&send_thread_pid, NULL, send_thread, (void *)&client_arg);
+	if (spc < 0) printf("create sending thread error\n");
 	
 
 	// waiting
@@ -64,7 +66,7 @@ int mtcp_read(int socket_fd, unsigned char *buf, int buf_len){
 	//pthread_cond_signal(&send_thread_sig);
 
 	
-
+	return 0;
 }
 
 void mtcp_close(int socket_fd){
@@ -93,7 +95,7 @@ static void *send_thread(void *client_arg){
 	SYN_ACK.buffer[0] = SYN_ACK.buffer[0] | (SYN_ACK.mode << 4);
 
 	// send SYN-ACK to client
-	sendto(arg->socket, SYN_ACK.buffer, strlen(SYN_ACK.buffer)+1, 0, arg->client_addr, sizeof(arg->client_addr));
+	sendto(arg->socket, SYN_ACK.buffer, sizeof(SYN_ACK.buffer), 0, (struct sockaddr*)arg->client_addr, (socklen_t)sizeof(arg->client_addr));
 
 	//wait until ACK accept
 	pthread_mutex_lock(&send_thread_sig_mutex);
@@ -112,14 +114,19 @@ static void *send_thread(void *client_arg){
 	// }
 	pthread_mutex_unlock(&send_thread_sig_mutex);
 
+	while(1) {
+		
+	}
 }
 
 static void *receive_thread(void *client_arg){
 	unsigned char buf[4];
 	struct arg_list *arg = (struct arg_list *)client_arg;
 
+	socklen_t addrlen = sizeof(arg->client_addr);
+
 	// monitor for the SYN
-	if(recvfrom(arg->socket, buf, sizeof(buf), 0, arg->client_addr, sizeof(arg->client_addr)) < 0)
+	if(recvfrom(arg->socket, buf, sizeof(buf), 0, (struct sockaddr*)arg->client_addr, &addrlen) < 0)
 	{
 		printf("receive error\n");
 		exit(1);
