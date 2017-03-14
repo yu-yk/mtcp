@@ -25,7 +25,7 @@ typedef struct mtcpheaders
 struct arg_list
 {
 	int socket;
-	struct sockaddr_in *server_addr;
+	struct sockaddr_in server_addr;
 };
 
 /* ThreadID for Sending Thread and Receiving Thread */
@@ -50,7 +50,7 @@ void mtcp_connect(int socket_fd, struct sockaddr_in *server_addr){
 	// init connect server arg
 	struct arg_list server_arg;
 	server_arg.socket = socket_fd;
-	server_arg.server_addr = server_addr;
+	server_arg.server_addr = *server_addr;
 
 
 	int spc = pthread_create(&send_thread_pid, NULL, send_thread, (void *)&server_arg);
@@ -100,14 +100,17 @@ static void *send_thread(void *server_arg){
 	// construct mtcp SYN header
 	mtcpheader SYN;
 	SYN.seq = 0;
+	SYN.seq = htonl(SYN.seq);
 	SYN.mode = '0';
 	memcpy(SYN.buffer, &SYN.seq, 4);
 	SYN.buffer[0] = SYN.buffer[0] | (SYN.mode << 4);
 
-
 	printf("try to send SYN \n");
 	// send SYN to server
-	sendto(arg->socket, SYN.buffer, sizeof(SYN.buffer), 0, (struct sockaddr*)arg->server_addr, (socklen_t)sizeof(arg->server_addr));
+	if(sendto(arg->socket, SYN.buffer, sizeof(SYN.buffer), 0, (struct sockaddr*)&arg->server_addr, (socklen_t)sizeof(arg->server_addr)) <= 0) {
+		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
+		exit(1);
+	}
 	printf("SYN sent\n");
 
 	// waiting again
@@ -119,13 +122,17 @@ static void *send_thread(void *server_arg){
 	// construct mtcp ACK header
 	mtcpheader ACK;
 	ACK.seq = 1;
+	ACK.seq = htonl(ACK.seq);
 	ACK.mode = '4';
 	memcpy(ACK.buffer, &ACK.seq, 4);
 	ACK.buffer[0] = ACK.buffer[0] | (ACK.mode << 4);
 
 	printf("try to send ACK \n");
 	// send ACK to server
-	sendto(arg->socket, ACK.buffer, sizeof(ACK.buffer), 0, (struct sockaddr*)arg->server_addr, (socklen_t)sizeof(arg->server_addr));
+	if(sendto(arg->socket, ACK.buffer, sizeof(ACK.buffer), 0, (struct sockaddr*)&arg->server_addr, (socklen_t)sizeof(arg->server_addr)) <= 0) {
+		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
+		exit(1);
+	}
 	printf("ACK sent\n");
 
 	// wake up main thread
@@ -143,39 +150,34 @@ static void *send_thread(void *server_arg){
 
 static void *receive_thread(void *server_arg){
 	printf("receive_thread started\n");
-
-	unsigned char buf[4];
 	struct arg_list *arg = (struct arg_list *)server_arg;
 	socklen_t addrlen = sizeof(arg->server_addr);
 
 	// keep monitoring
 	while (1) {
+		unsigned int seq;
+		unsigned int mode;
+		unsigned char buff[4];
+
 		// monitor for the SYN-ACK
-		errno = EOK;
-		if(recvfrom(arg->socket, buf, sizeof(buf), 0, (struct sockaddr*)arg->server_addr, &addrlen) < 0)
-		{
-			printf("error%d\n", errno);
-			printf("%s\n", strerror(errno));
-			printf("receive error\n");
+		if(recvfrom(arg->socket, buff, sizeof(buff), 0, (struct sockaddr*)&arg->server_addr, &addrlen) < 0) {
+			printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
 			exit(1);
 		}
 
 		// decode header
-		mtcpheader header;
-		header.mode = buf[0] >> 4;
-		header.buffer[0] = buf[0] & 0x0F;
-		memcpy(&header.seq, header.buffer, 4);
-		header.seq = ntohl(header.seq);
+		mode = buff[0] >> 4;
+		buff[0] = buff[0] & 0x0F;
+		memcpy(&seq, buff, 4);
+		seq = ntohl(seq);
 
-		switch(header.mode) {
-			case '1': // SYN-ACK
-			printf("header mode: %c\n", header.mode);
+		switch(mode) {
+			case 1: // SYN-ACK
 			printf("SYN-ACK recevied\n");
 			// when SYN-ACK received
 			pthread_cond_signal(&send_thread_sig);
 			break;
-			case '4': // ACK
-			printf("header mode: %c\n", header.mode);
+			case 4: // ACK
 			printf("ACK recevied\n");
 			// when ACK received
 			pthread_cond_signal(&send_thread_sig);
