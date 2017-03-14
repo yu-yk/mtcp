@@ -61,8 +61,9 @@ void mtcp_accept(int socket_fd, struct sockaddr_in *client_addr){
 }
 
 int mtcp_read(int socket_fd, unsigned char *buf, int buf_len){
+	//pthread_cond_signal(&send_thread_sig);
 
-	stru
+	
 
 }
 
@@ -102,6 +103,13 @@ static void *send_thread(void *client_arg){
 	// wake up main thread
 	pthread_cond_signal(&app_thread_sig);
 
+	//wait until ACK accept
+	pthread_mutex_lock(&send_thread_sig_mutex);
+	// while(!send_thread_sig) {
+	pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
+	// }
+	pthread_mutex_unlock(&send_thread_sig_mutex);
+
 }
 
 static void *receive_thread(void *client_arg){
@@ -132,6 +140,10 @@ static void *receive_thread(void *client_arg){
 				break;
 			case '4': // ACK
 
+				break;
+			case '5': //DATA
+				// when DATA received
+				pthread_cond_signal(&send_thread_sig);
 				break;
 			default:
 				printf("receive switch error\n");
