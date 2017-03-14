@@ -54,10 +54,19 @@ void mtcp_connect(int socket_fd, struct sockaddr_in *server_addr){
 
 
 	int spc = pthread_create(&send_thread_pid, NULL, send_thread, (void *)&server_arg);
-	if (spc < 0) printf("create sending thread error\n");
+	printf("send_thread created\n");
+	if (spc < 0) {
+		printf("create sending thread error\n");
+	}
 	int rpc = pthread_create(&recv_thread_pid, NULL, receive_thread, (void *)&server_arg);
-	if (rpc < 0) printf("create receivng thread error\n");
+	printf("receive_thread created\n");
+	if (rpc < 0) {
+		printf("create receivng thread error\n");
+	}
 
+	while (1) {
+		pthread_cond_signal(&send_thread_sig);
+	}
 	// wake up sending thread
 	pthread_cond_signal(&send_thread_sig);
 
@@ -83,6 +92,7 @@ void mtcp_close(int socket_fd){
 }
 
 static void *send_thread(void *server_arg){
+	printf("send_thread started\n");
 	struct arg_list *arg = (struct arg_list *)server_arg;
 	/*************************************************************************
 	 *********************** Three Way Handshake *****************************
@@ -90,10 +100,10 @@ static void *send_thread(void *server_arg){
 
 	// waiting
 	pthread_mutex_lock(&send_thread_sig_mutex);
-	// while(!send_thread_sig) {
-		pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
-	// }
+	printf("send_thread waiting\n");
+	pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
 	pthread_mutex_unlock(&send_thread_sig_mutex);
+	printf("send_thread woke\n");
 
 	// construct mtcp SYN header
 	mtcpheader SYN;
@@ -102,6 +112,8 @@ static void *send_thread(void *server_arg){
 	memcpy(SYN.buffer, &SYN.seq, 4);
 	SYN.buffer[0] = SYN.buffer[0] | (SYN.mode << 4);
 
+
+	printf("try to send SYN \n");
 	// send SYN to server
 	sendto(arg->socket, SYN.buffer, sizeof(SYN.buffer), 0, (struct sockaddr*)arg->server_addr, (socklen_t)sizeof(arg->server_addr));
 	printf("SYN sent\n");
@@ -120,6 +132,7 @@ static void *send_thread(void *server_arg){
 	memcpy(ACK.buffer, &ACK.seq, 4);
 	ACK.buffer[0] = ACK.buffer[0] | (ACK.mode << 4);
 
+	printf("try to send ACK \n");
 	// send ACK to server
 	sendto(arg->socket, ACK.buffer, sizeof(ACK.buffer), 0, (struct sockaddr*)arg->server_addr, (socklen_t)sizeof(arg->server_addr));
 	printf("ACK sent\n");
@@ -130,11 +143,12 @@ static void *send_thread(void *server_arg){
 	 ********************* End of Three Way Handshake ************************
 	 *************************************************************************/
 	 while (1) {
-	 	/* code */
 	 }
 }
 
 static void *receive_thread(void *server_arg){
+	printf("receive_thread started\n");
+
 	unsigned char buf[4];
 	struct arg_list *arg = (struct arg_list *)server_arg;
 
@@ -163,13 +177,13 @@ static void *receive_thread(void *server_arg){
 
 		switch(header.mode) {
 			case '1': // SYN-ACK
-				printf("header mode: %s\n", header.mode);
+				printf("header mode: %c\n", header.mode);
 				printf("SYN-ACK recevied\n");
 				// when SYN-ACK received
 				pthread_cond_signal(&send_thread_sig);
 				break;
 			case '4': // ACK
-				printf("header mode: %s\n", header.mode);
+				printf("header mode: %c\n", header.mode);
 				printf("ACK recevied\n");
 				// when ACK received
 				pthread_cond_signal(&send_thread_sig);
