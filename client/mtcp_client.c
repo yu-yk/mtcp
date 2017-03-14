@@ -104,6 +104,7 @@ static void *send_thread(void *server_arg){
 
 	// send SYN to server
 	sendto(arg->socket, SYN.buffer, sizeof(SYN.buffer), 0, (struct sockaddr*)arg->server_addr, (socklen_t)sizeof(arg->server_addr));
+	printf("SYN sent\n");
 
 	// waiting again
 	pthread_mutex_lock(&send_thread_sig_mutex);
@@ -121,6 +122,7 @@ static void *send_thread(void *server_arg){
 
 	// send ACK to server
 	sendto(arg->socket, ACK.buffer, sizeof(ACK.buffer), 0, (struct sockaddr*)arg->server_addr, (socklen_t)sizeof(arg->server_addr));
+	printf("ACK sent\n");
 
 	// wake up main thread
 	pthread_cond_signal(&app_thread_sig);
@@ -161,10 +163,14 @@ static void *receive_thread(void *server_arg){
 
 		switch(header.mode) {
 			case '1': // SYN-ACK
+				printf("header mode: %s\n", header.mode);
+				printf("SYN-ACK recevied\n");
 				// when SYN-ACK received
 				pthread_cond_signal(&send_thread_sig);
 				break;
 			case '4': // ACK
+				printf("header mode: %s\n", header.mode);
+				printf("ACK recevied\n");
 				// when ACK received
 				pthread_cond_signal(&send_thread_sig);
 				break;
