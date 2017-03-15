@@ -8,13 +8,14 @@
 #include <errno.h>
 #include "mtcp_client.h"
 #include <errno.h>
+#include <mtcp_common.h>
 
-#ifndef EOK
-#define  EOK 6
-#endif
 
 /* -------------------- Global Variables -------------------- */
 unsigned char *mtcp_internal_buffer[MAX_BUF_SIZE];
+unsigned int global_connection_state = 0;
+unsigned int global_flag = 0;
+unsigned int global_seq = 0;
 
 typedef struct mtcpheaders
 {
@@ -46,6 +47,11 @@ static pthread_mutex_t info_mutex = PTHREAD_MUTEX_INITIALIZER;
 static void *send_thread();
 static void *receive_thread();
 
+/* Three Way Handshake, Four Way Handshake, data transmition */
+static void three_way_handshake();
+static void send_data(int seq);
+static void four_way_handshake();
+
 /* Connect Function Call (mtcp Version) */
 void mtcp_connect(int socket_fd, struct sockaddr_in *server_addr){
 
@@ -54,12 +60,10 @@ void mtcp_connect(int socket_fd, struct sockaddr_in *server_addr){
 	server_arg.socket = socket_fd;
 	server_arg.server_addr = *server_addr;
 
-
+	// create send_thread and receive_thread
 	int spc = pthread_create(&send_thread_pid, NULL, send_thread, (void *)&server_arg);
-	printf("send_thread created\n");
 	if (spc < 0) printf("create sending thread error\n");
 	int rpc = pthread_create(&recv_thread_pid, NULL, receive_thread, (void *)&server_arg);
-	printf("receive_thread created\n");
 	if (rpc < 0) printf("create receivng thread error\n");
 
 	// sleep 1 second for the thread creation
@@ -78,10 +82,9 @@ void mtcp_connect(int socket_fd, struct sockaddr_in *server_addr){
 int mtcp_write(int socket_fd, unsigned char *buf, int buf_len){
 	// write message to internal buffer
 	memcpy(mtcp_internal_buffer, buf, MAX_BUF_SIZE);
-	
+
 	// send signal wake up sending thread
 	pthread_cond_signal(&send_thread_sig);
-
 
 
 	return 0;
@@ -95,9 +98,11 @@ void mtcp_close(int socket_fd){
 static void *send_thread(void *server_arg){
 	printf("send_thread started\n");
 	struct arg_list *arg = (struct arg_list *)server_arg;
-	/*************************************************************************
-	*********************** Three Way Handshake *****************************
-	*************************************************************************/
+	int connection_state;
+	// 0 = three way handshake
+	// 1 = data transmition
+	// 2 = four way handshake
+	int seq;
 
 	// waiting
 	pthread_mutex_lock(&send_thread_sig_mutex);
@@ -105,6 +110,97 @@ static void *send_thread(void *server_arg){
 	pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
 	pthread_mutex_unlock(&send_thread_sig_mutex);
 	printf("send_thread woke\n");
+
+	while (1) {
+
+		sleep(1); // time out
+
+		// check state
+		pthread_mutex_lock(&info_mutex);
+		if (global_connection_state == 0) {
+			connection_state = 0;
+		} else if (global_connection_state == 1) {
+			connection_state = 1;
+		} else if (global_connection_state == 2) {
+			connection_state = 2;
+		} else {
+			connection_state = -1;
+		}
+		pthread_mutex_unlock(&info_mutex);
+
+
+		// send packet
+		if (connection_state == 0) {
+			// perform three way Handshake
+			three_way_handshake(arg);
+		} else if (connection_state == 1) {
+			// send or retransmit data packet
+		} else if (connection_state == 2) {
+			// perform four way handshake
+			break;
+		} else {
+			// unknown error
+		}
+
+	}
+
+}
+
+static void *receive_thread(void *server_arg){
+	printf("receive_thread started\n");
+	struct arg_list *arg = (struct arg_list *)server_arg;
+	socklen_t addrlen = sizeof(arg->server_addr);
+
+	// while (1) {
+	// 	// mon socket
+	//
+	// 	// check state under critial section
+	//
+	// 	// update state under critial section
+	//
+	// 	// if 4 way finished break
+	//
+	// }
+
+	// keep monitoring
+	while (1) {
+		unsigned int seq;
+		unsigned int mode;
+		unsigned char buff[4];
+
+		// monitor for the SYN-ACK
+		if(recvfrom(arg->socket, buff, sizeof(buff), 0, (struct sockaddr*)&arg->server_addr, &addrlen) < 0) {
+			printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
+			exit(1);
+		}
+
+		// decode header
+		mode = buff[0] >> 4;
+		buff[0] = buff[0] & 0x0F;
+		memcpy(&seq, buff, 4);
+		seq = ntohl(seq);
+
+		switch(mode) {
+			case 1: // SYN-ACK
+			printf("SYN-ACK recevied\n");
+			// when SYN-ACK received
+			pthread_cond_signal(&send_thread_sig);
+			break;
+			case 4: // ACK
+			printf("ACK recevied\n");
+			// when ACK received
+			pthread_cond_signal(&send_thread_sig);
+			break;
+			default:
+			printf("receive switch error\n");
+		}
+	}
+}
+
+static void three_way_handshake(struct arg_list *arg) {
+	/*************************************************************************
+	*********************** Three Way Handshake *****************************
+	*************************************************************************/
 
 	// construct mtcp SYN header
 	mtcpheader SYN;
@@ -151,58 +247,12 @@ static void *send_thread(void *server_arg){
 	/*************************************************************************
 	********************* End of Three Way Handshake ************************
 	*************************************************************************/
-
-	// repeating sending data
-	while (1) {
-		// wait for mtcp_write call signal to wake up
-		pthread_mutex_lock(&send_thread_sig_mutex);
-		pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
-		pthread_mutex_unlock(&send_thread_sig_mutex);
-
-		// send data packet
-
-
-	}
-
 }
 
-static void *receive_thread(void *server_arg){
-	printf("receive_thread started\n");
-	struct arg_list *arg = (struct arg_list *)server_arg;
-	socklen_t addrlen = sizeof(arg->server_addr);
+static void send_data(int seq) {
+	/* code */
+}
 
-	// keep monitoring
-	while (1) {
-		unsigned int seq;
-		unsigned int mode;
-		unsigned char buff[4];
-
-		// monitor for the SYN-ACK
-		if(recvfrom(arg->socket, buff, sizeof(buff), 0, (struct sockaddr*)&arg->server_addr, &addrlen) < 0) {
-			printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
-			exit(1);
-		}
-
-		// decode header
-		mode = buff[0] >> 4;
-		buff[0] = buff[0] & 0x0F;
-		memcpy(&seq, buff, 4);
-		seq = ntohl(seq);
-
-		switch(mode) {
-			case 1: // SYN-ACK
-			printf("SYN-ACK recevied\n");
-			// when SYN-ACK received
-			pthread_cond_signal(&send_thread_sig);
-			break;
-			case 4: // ACK
-			printf("ACK recevied\n");
-			// when ACK received
-			pthread_cond_signal(&send_thread_sig);
-			break;
-			default:
-			printf("receive switch error\n");
-		}
-	}
-
+static void four_way_handshake() {
+	/* code */
 }
