@@ -46,7 +46,7 @@ int main(int argc, char **argv){
 		fprintf(stderr, "\tError message: Wrong address format\n");
 		exit(1);
 	}
-	
+
 	if( bind(sock_fd,(struct sockaddr*) &server_addr,sizeof(server_addr)) < 0 ){
 		fprintf(stderr, "%s (line %d): %s - bind():\n", __FILE__, __LINE__, __FUNCTION__);
 		fprintf(stderr, "\tBind Socket Error\n");
@@ -64,15 +64,19 @@ int main(int argc, char **argv){
 		exit(1);
 	}
 
+	while (1) {
+
+	}
+
 	while(1){
 		// Receive data through mTCP protocol and write it to file
 		if(mtcp_read(sock_fd, (unsigned char*) buf, MAX_BUF_SIZE) <= 0)
 			break;
-			
+
 		// Write the file
 		write(file_fd, buf, read_rtn);
 	}
-	
+
 	// Close the mTCP connection
 	mtcp_close(sock_fd);
 
@@ -80,4 +84,3 @@ int main(int argc, char **argv){
 	close(file_fd);
 	return 0;
 }
-

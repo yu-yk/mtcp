@@ -14,6 +14,8 @@
 #endif
 
 /* -------------------- Global Variables -------------------- */
+unsigned char *mtcp_internal_buffer[MAX_BUF_SIZE];
+
 typedef struct mtcpheaders
 {
 	unsigned int seq;			// sequence number
@@ -74,6 +76,13 @@ void mtcp_connect(int socket_fd, struct sockaddr_in *server_addr){
 
 /* Write Function Call (mtcp Version) */
 int mtcp_write(int socket_fd, unsigned char *buf, int buf_len){
+	// write message to internal buffer
+	memcpy(mtcp_internal_buffer, buf, MAX_BUF_SIZE);
+	
+	// send signal wake up sending thread
+	pthread_cond_signal(&send_thread_sig);
+
+
 
 	return 0;
 }
@@ -138,12 +147,21 @@ static void *send_thread(void *server_arg){
 	// wake up main thread
 	pthread_cond_signal(&app_thread_sig);
 	printf("Three Way Handshake established\n");
+
 	/*************************************************************************
 	********************* End of Three Way Handshake ************************
 	*************************************************************************/
 
+	// repeating sending data
 	while (1) {
-		/* wait for send data */
+		// wait for mtcp_write call signal to wake up
+		pthread_mutex_lock(&send_thread_sig_mutex);
+		pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
+		pthread_mutex_unlock(&send_thread_sig_mutex);
+
+		// send data packet
+
+
 	}
 
 }
