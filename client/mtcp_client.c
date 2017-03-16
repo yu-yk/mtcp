@@ -12,7 +12,7 @@
 
 
 /* -------------------- Global Variables -------------------- */
-unsigned char *mtcp_internal_buffer[MAX_BUF_SIZE];
+unsigned char *mtcp_internal_buffer[5*MAX_BUF_SIZE];
 unsigned int global_connection_state = 0;
 unsigned int global_last_packet_received = -1;
 unsigned int global_last_packet_sent = -1;
@@ -51,12 +51,9 @@ static void *receive_thread();
 /* Three Way Handshake Function*/
 static void send_SYN();
 static void send_ACK();
-
-/* Data Transmition Function */
+static void send_FIN();
 static void send_data(int seq);
 
-/* Four Way Handshake Function */
-static void four_way_handshake();
 
 /* Connect Function Call (mtcp Version) */
 void mtcp_connect(int socket_fd, struct sockaddr_in *server_addr){
@@ -193,7 +190,6 @@ static void *receive_thread(void *server_arg) {
 	// 3 = FIN-ACK
 	// 4 = ACK
 	// 5 = DATA
-	int seq;
 
 	while (1) {
 		// monitor the socket
@@ -218,6 +214,15 @@ static void *receive_thread(void *server_arg) {
 			// when SYN-ACK received
 			pthread_mutex_lock(&info_mutex);
 			global_last_packet_received = 1;
+			global_seq += seq;
+			pthread_mutex_unlock(&info_mutex);
+			break;
+			case 3: // FIN-ACK
+			printf("FIN-ACK recevied\n");
+			// when FIN-ACK received
+			pthread_mutex_lock(&info_mutex);
+			global_last_packet_received = 3;
+			global_seq += seq;
 			pthread_mutex_unlock(&info_mutex);
 			break;
 			case 4: // ACK
@@ -225,6 +230,7 @@ static void *receive_thread(void *server_arg) {
 			// when ACK received
 			pthread_mutex_lock(&info_mutex);
 			global_last_packet_received = 4;
+			global_seq += seq;
 			pthread_mutex_unlock(&info_mutex);
 			break;
 			default:
@@ -245,7 +251,6 @@ static void *receive_thread(void *server_arg) {
 		} else if (global_last_packet_sent == -1) {
 			global_connection_state = -1;
 		}
-		seq = global_seq;
 		pthread_mutex_unlock(&info_mutex);
 
 		// if 4 way finished break
@@ -343,9 +348,5 @@ static void three_way_handshake(struct arg_list *arg) {
 }
 
 static void send_data(struct arg_list *arg, int seq) {
-	/* code */
-}
-
-static void four_way_handshake(struct arg_list *arg) {
 	/* code */
 }
