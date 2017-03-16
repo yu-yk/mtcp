@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include "mtcp_server.h"
+#include <mtcp_common.h>
 
 /* -------------------- Global Variables -------------------- */
 unsigned char *mtcp_internal_buffer[MAX_BUF_SIZE];
@@ -47,7 +48,6 @@ static void *receive_thread();
 /****server_addr or client_addr?***/
 
 /* Three Way Handshake Function*/
-static void send_SYN();
 static void send_SYN_ACK();
 
 /* Data Transmition Function */
@@ -124,15 +124,15 @@ static void *send_thread(void *client_arg){
 			connection_state = -1;
 		}
 
-		if (global_last_flag_received == 0) {
+		if (global_last_packet_received == 0) {
 			last_flag_received = 0;
-		} else if (global_last_flag_received == 2) {
+		} else if (global_last_packet_received == 2) {
 			last_flag_received = 2;
-		} else if (global_last_flag_received == 4) {
+		} else if (global_last_packet_received == 4) {
 			last_flag_received = 4;
-		} else if (global_last_flag_received == 5) {
+		} else if (global_last_packet_received == 5) {
 			last_flag_received = 5;
-		} else if (global_last_flag_received == -1) {
+		} else if (global_last_packet_received == -1) {
 			last_flag_received = -1;
 		}
 
@@ -153,7 +153,7 @@ static void *send_thread(void *client_arg){
 				global_last_packet_sent = 
 				pthread_mutex_unlock(&info_mutex);
 			} else if (last_flag_received == 4){
-				global_connection_state = 1
+				global_connection_state = 1;
 				pthread_cond_signal(&app_thread_sig);
 			}  else {
 				printf("three_way_handshake error\n");
@@ -212,7 +212,7 @@ static void *receive_thread(void *client_arg){
 			printf("FIN received\n");
 			pthread_mutex_lock(&info_mutex);
 			global_last_packet_received = 2;
-			global_connection_state = 2
+			global_connection_state = 2;
 			pthread_mutex_unlock(&info_mutex);
 			pthread_cond_signal(&send_thread_sig);
 			break;
