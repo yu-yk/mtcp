@@ -14,7 +14,7 @@
 /* -------------------- Global Variables -------------------- */
 unsigned char *mtcp_internal_buffer[MAX_BUF_SIZE];
 unsigned int global_connection_state = 0;
-unsigned int global_flag = 0;
+unsigned int global_last_flag_received = 0;
 unsigned int global_seq = 0;
 
 typedef struct mtcpheaders
@@ -47,9 +47,14 @@ static pthread_mutex_t info_mutex = PTHREAD_MUTEX_INITIALIZER;
 static void *send_thread();
 static void *receive_thread();
 
-/* Three Way Handshake, Four Way Handshake, data transmition */
-static void three_way_handshake();
+/* Three Way Handshake Function*/
+static void send_SYN();
+static void send_SYN_ACK();
+
+/* Data Transmition Function */
 static void send_data(int seq);
+
+/* Four Way Handshake Function */
 static void four_way_handshake();
 
 /* Connect Function Call (mtcp Version) */
@@ -67,9 +72,9 @@ void mtcp_connect(int socket_fd, struct sockaddr_in *server_addr){
 	if (rpc < 0) printf("create receivng thread error\n");
 
 	// sleep 1 second for the thread creation
-	sleep(1);
+	// sleep(1);
 	// wake up sending thread
-	pthread_cond_signal(&send_thread_sig);
+	// pthread_cond_signal(&send_thread_sig);
 	// then waiting
 	pthread_mutex_lock(&app_thread_sig_mutex);
 	pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex);
@@ -81,7 +86,7 @@ void mtcp_connect(int socket_fd, struct sockaddr_in *server_addr){
 /* Write Function Call (mtcp Version) */
 int mtcp_write(int socket_fd, unsigned char *buf, int buf_len){
 	// write message to internal buffer
-	memcpy(mtcp_internal_buffer, buf, MAX_BUF_SIZE);
+	memcpy(mtcp_internal_buffer, buf, buf_len);
 
 	// send signal wake up sending thread
 	pthread_cond_signal(&send_thread_sig);
@@ -102,14 +107,19 @@ static void *send_thread(void *server_arg){
 	// 0 = three way handshake
 	// 1 = data transmition
 	// 2 = four way handshake
+	int last_flag_received;
+	// 0 = no flag received yet
+	// 1 = SYN-ACK received
+	// 2 = ACK received
+	// 3 = FIN-ACK received
 	int seq;
 
 	// waiting
-	pthread_mutex_lock(&send_thread_sig_mutex);
-	printf("send_thread waiting\n");
-	pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
-	pthread_mutex_unlock(&send_thread_sig_mutex);
-	printf("send_thread woke\n");
+	// pthread_mutex_lock(&send_thread_sig_mutex);
+	// printf("send_thread waiting\n");
+	// pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
+	// pthread_mutex_unlock(&send_thread_sig_mutex);
+	// printf("send_thread woke\n");
 
 	while (1) {
 
@@ -126,12 +136,33 @@ static void *send_thread(void *server_arg){
 		} else {
 			connection_state = -1;
 		}
+
+		if (global_last_flag_received == 0) {
+			last_flag_received = 0;
+		} else if (global_last_flag_received == 1) {
+			last_flag_received = 1;
+		} else if (global_last_flag_received == 2) {
+			last_flag_received = 2;
+		} else if (global_last_flag_received == 3) {
+			last_flag_received = 3;
+		} else if (global_last_flag_received == -1) {
+			last_flag_received = -1;
+		}
+
+		seq = global_seq;
 		pthread_mutex_unlock(&info_mutex);
 
 
 		// send packet
 		if (connection_state == 0) {
 			// perform three way Handshake
+			if (last_flag_received == 0) {
+				// send SYN to server
+			} else if (last_flag_received == 1) {
+				// send ACK to server
+			} else {
+				printf("three_way_handshake error\n");
+			}
 			three_way_handshake(arg);
 		} else if (connection_state == 1) {
 			// send or retransmit data packet
@@ -249,10 +280,10 @@ static void three_way_handshake(struct arg_list *arg) {
 	*************************************************************************/
 }
 
-static void send_data(int seq) {
+static void send_data(struct arg_list *arg, int seq) {
 	/* code */
 }
 
-static void four_way_handshake() {
+static void four_way_handshake(struct arg_list *arg) {
 	/* code */
 }
