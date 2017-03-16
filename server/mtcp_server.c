@@ -129,7 +129,7 @@ static void *receive_thread(void *client_arg){
 		unsigned int seq;
 		unsigned int mode;
 		unsigned char buff[4];
-
+		
 		// monitor for the SYN
 		if(recvfrom(arg->socket, buff, sizeof(buff), 0, (struct sockaddr*)&arg->client_addr, &addrlen) < 0) {
 			printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
