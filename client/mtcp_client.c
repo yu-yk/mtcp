@@ -147,6 +147,10 @@ static void *send_thread(void *server_arg) {
 				pthread_mutex_lock(&info_mutex);
 				global_last_packet_sent = 0;
 				pthread_mutex_unlock(&info_mutex);
+				// wait for SYN-ACK
+				pthread_mutex_lock(&send_thread_sig_mutex);
+				pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex);
+				pthread_mutex_unlock(&send_thread_sig_mutex);
 			} else if (last_packet_received == 1) { // send ACK to server
 				send_ACK(arg, seq);
 				pthread_mutex_lock(&info_mutex);
@@ -215,6 +219,7 @@ static void *receive_thread(void *server_arg) {
 			global_last_packet_received = 1;
 			global_seq += seq;
 			pthread_mutex_unlock(&info_mutex);
+			pthread_cond_signal(&send_thread_sig);
 			break;
 			case 3: // FIN-ACK
 			printf("FIN-ACK recevied\n");
@@ -292,58 +297,6 @@ static void send_ACK(struct arg_list *arg, int seq) {
 		exit(1);
 	}
 	printf("ACK sent\n");
-}
-
-static void three_way_handshake(struct arg_list *arg) {
-	/*************************************************************************
-	*********************** Three Way Handshake *****************************
-	*************************************************************************/
-
-	// // construct mtcp SYN header
-	// mtcpheader SYN;
-	// SYN.seq = 0;
-	// SYN.seq = htonl(SYN.seq);
-	// SYN.mode = '0';
-	// memcpy(SYN.buffer, &SYN.seq, 4);
-	// SYN.buffer[0] = SYN.buffer[0] | (SYN.mode << 4);
-	//
-	// printf("try to send SYN \n");
-	// // send SYN to server
-	// if(sendto(arg->socket, SYN.buffer, sizeof(SYN.buffer), 0, (struct sockaddr*)&arg->server_addr, (socklen_t)sizeof(arg->server_addr)) <= 0) {
-	// 	printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
-	// 	exit(1);
-	// }
-	// printf("SYN sent\n");
-	//
-	// // waiting again
-	// printf("send_thread waiting\n");
-	// pthread_mutex_lock(&send_thread_sig_mutex);
-	// pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
-	// pthread_mutex_unlock(&send_thread_sig_mutex);
-
-	// // construct mtcp ACK header
-	// mtcpheader ACK;
-	// ACK.seq = 1;
-	// ACK.seq = htonl(ACK.seq);
-	// ACK.mode = '4';
-	// memcpy(ACK.buffer, &ACK.seq, 4);
-	// ACK.buffer[0] = ACK.buffer[0] | (ACK.mode << 4);
-	//
-	// printf("try to send ACK \n");
-	// // send ACK to server
-	// if(sendto(arg->socket, ACK.buffer, sizeof(ACK.buffer), 0, (struct sockaddr*)&arg->server_addr, (socklen_t)sizeof(arg->server_addr)) <= 0) {
-	// 	printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
-	// 	exit(1);
-	// }
-	// printf("ACK sent\n");
-	//
-	// // wake up main thread
-	// pthread_cond_signal(&app_thread_sig);
-	// printf("Three Way Handshake established\n");
-
-	/*************************************************************************
-	********************* End of Three Way Handshake ************************
-	*************************************************************************/
 }
 
 static void send_data(struct arg_list *arg, int seq) {

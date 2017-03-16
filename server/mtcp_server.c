@@ -90,7 +90,7 @@ void mtcp_close(int socket_fd){
 }
 
 static void *send_thread(void *client_arg){
-	printf("Receive Thread Start\n");
+	printf("Send Thread Start\n");
 	// printf("Sleep\n");
 	// sleep(1);//sleep for 1 sec
 	struct arg_list *arg = (struct arg_list *)client_arg;
@@ -105,11 +105,14 @@ static void *send_thread(void *client_arg){
 	// 4 = ACK received
 	int seq;
 
+	pthread_mutex_lock(&send_thread_sig_mutex);
+	pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
+	pthread_mutex_unlock(&send_thread_sig_mutex);
+
 	/************************************************************************
 	************************* Connection State ******************************
 	*************************************************************************/
 	while (1) {
-
 		sleep(1); // time out
 
 		// check state
@@ -139,21 +142,24 @@ static void *send_thread(void *client_arg){
 		seq = global_seq;
 		pthread_mutex_unlock(&info_mutex);
 
-		pthread_mutex_lock(&send_thread_sig_mutex);
-		pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex); // wait
-		pthread_mutex_unlock(&send_thread_sig_mutex);
-
 		// send packet
 		if (connection_state == 0) {
 			// perform three way Handshake
+			printf("%d\n", last_flag_received);
 			if (last_flag_received == 0) {
 				// send SYN-ACK to client
 				send_SYN_ACK(arg, seq);
 				pthread_mutex_lock(&info_mutex);
-				global_last_packet_sent = 
+				global_last_packet_sent = 1;
 				pthread_mutex_unlock(&info_mutex);
+				// wait for ACK
+				pthread_mutex_lock(&send_thread_sig_mutex);
+				pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex);
+				pthread_mutex_unlock(&send_thread_sig_mutex);
 			} else if (last_flag_received == 4){
+				pthread_mutex_lock(&info_mutex);
 				global_connection_state = 1;
+				pthread_mutex_unlock(&info_mutex);
 				pthread_cond_signal(&app_thread_sig);
 			}  else {
 				printf("three_way_handshake error\n");
@@ -202,6 +208,7 @@ static void *receive_thread(void *client_arg){
 			// when SYN received
 			printf("SYN received\n");
 			pthread_mutex_lock(&info_mutex);
+			printf("change connection_state to 0\n");
 			global_last_packet_received = 0;
 			global_connection_state = 0;
 			pthread_mutex_unlock(&info_mutex);
@@ -239,23 +246,13 @@ static void *receive_thread(void *client_arg){
 		pthread_mutex_lock(&info_mutex);
 		// check last packet sent
 		if (global_last_packet_sent == 1) {			// SYN-ACK sent
-			pthread_mutex_lock(&info_mutex);
 			global_connection_state = 0;							// state remain three_way_handshake
-			pthread_mutex_unlock(&info_mutex);
 		} else if (global_last_packet_sent == 4) {	// ACK sent
-			pthread_mutex_lock(&info_mutex);
 			global_connection_state = 1;							// state change to data transmition
-			pthread_mutex_unlock(&info_mutex);
 		} else if (global_last_packet_sent == 3) {	// FIN-ACK sent
-			pthread_mutex_lock(&info_mutex);
 			global_connection_state = 2;							// state remian four_way_handshake
-			pthread_mutex_unlock(&info_mutex);
-		} else if (global_last_packet_sent == -1) {
-			pthread_mutex_lock(&info_mutex);
-			global_connection_state = -1;
-			pthread_mutex_unlock(&info_mutex);
 		}
-		
+
 		pthread_mutex_unlock(&info_mutex);
 
 	}
@@ -266,6 +263,7 @@ static void *receive_thread(void *client_arg){
 
 static void send_SYN_ACK(struct arg_list *arg, int seq) {
 	// construct mtcp SYN-ACK header
+	printf("testing\n");
 	mtcpheader SYN_ACK;
 	SYN_ACK.seq = seq + 1;
 	SYN_ACK.seq = htonl(SYN_ACK.seq);
