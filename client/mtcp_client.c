@@ -52,7 +52,7 @@ static void *receive_thread();
 static void send_SYN();
 static void send_ACK();
 static void send_FIN();
-static void send_data(int seq);
+static void send_data();
 
 
 /* Connect Function Call (mtcp Version) */
@@ -147,7 +147,7 @@ static void *send_thread(void *server_arg) {
 				pthread_mutex_lock(&info_mutex);
 				global_last_packet_sent = 0;
 				pthread_mutex_unlock(&info_mutex);
-			} else if (last_flag_received == 1) { // send ACK to server
+			} else if (last_packet_received == 1) { // send ACK to server
 				send_ACK(arg, seq);
 				pthread_mutex_lock(&info_mutex);
 				global_last_packet_sent = 4;
@@ -179,11 +179,11 @@ static void *receive_thread(void *server_arg) {
 	printf("receive_thread started\n");
 	struct arg_list *arg = (struct arg_list *)server_arg;
 	socklen_t addrlen = sizeof(arg->server_addr);
-	int connection_state;
+	// int connection_state;
 	// 0 = three way handshake
 	// 1 = data transmition
 	// 2 = four way handshake
-	int last_packet_sent;
+	// int last_packet_sent;
 	// 0 = SYN
 	// 1 = SYN-ACK
 	// 2 = FIN
@@ -192,15 +192,14 @@ static void *receive_thread(void *server_arg) {
 	// 5 = DATA
 
 	while (1) {
+		unsigned int seq;
+		unsigned int mode;
+		unsigned char buff[4];
 		// monitor the socket
-		// monitor for the SYN-ACK
 		if(recvfrom(arg->socket, buff, sizeof(buff), 0, (struct sockaddr*)&arg->server_addr, &addrlen) < 0) {
 			printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
 			exit(1);
 		}
-		unsigned int seq;
-		unsigned int mode;
-		unsigned char buff[4];
 
 		// decode header
 		mode = buff[0] >> 4;
