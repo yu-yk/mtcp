@@ -13,6 +13,8 @@
 
 /* -------------------- Global Variables -------------------- */
 unsigned char *mtcp_internal_buffer[5*MAX_BUF_SIZE];
+unsigned int global_write_buffer_pointer = 0;
+unsigned int global_send_buffer_pointer = 0;
 unsigned int global_connection_state = 0;
 unsigned int global_last_packet_received = -1;
 unsigned int global_last_packet_sent = -1;
@@ -79,17 +81,26 @@ void mtcp_connect(int socket_fd, struct sockaddr_in *server_addr){
 /* Write Function Call (mtcp Version) */
 int mtcp_write(int socket_fd, unsigned char *buf, int buf_len){
 	// write message to internal buffer
-	memcpy(mtcp_internal_buffer, buf, buf_len);
-
+	printf("write position %d\n", global_write_buffer_pointer);
+	printf("global_write_buffer_pointer = %d\n", global_write_buffer_pointer);
+	memcpy(&mtcp_internal_buffer[global_write_buffer_pointer], buf, buf_len); // keep write to the new space
+	global_write_buffer_pointer += buf_len;
 	// send signal wake up sending thread
 	pthread_cond_signal(&send_thread_sig);
-
 
 	return 0;
 }
 
 /* Close Function Call (mtcp Version) */
 void mtcp_close(int socket_fd){
+
+	pthread_mutex_lock(&info_mutex);
+	global_connection_state = 2;
+	pthread_mutex_unlock(&info_mutex);
+
+	pthread_mutex_lock(&app_thread_sig_mutex);
+	pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex);
+	pthread_mutex_unlock(&app_thread_sig_mutex);
 
 }
 
@@ -157,9 +168,8 @@ static void *send_thread(void *server_arg) {
 				global_last_packet_sent = 4;
 				pthread_mutex_unlock(&info_mutex);
 				printf("Three Way Handshake established\n");
-				// wake up main thread
+				// wake up main thread and wait for data transmition
 				pthread_cond_signal(&app_thread_sig);
-
 				pthread_mutex_lock(&send_thread_sig_mutex);
 				pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex);
 				pthread_mutex_unlock(&send_thread_sig_mutex);
@@ -170,6 +180,26 @@ static void *send_thread(void *server_arg) {
 			// send or retransmit data packet
 		} else if (connection_state == 2) {
 			// perform four way handshake
+			if (last_packet_received == 4) {					// ACK received
+				send_FIN(arg, seq);
+				pthread_mutex_lock(&info_mutex);
+				global_last_packet_sent = 2;
+				pthread_mutex_unlock(&info_mutex);
+				// wait for FIN-ACK
+				pthread_mutex_lock(&send_thread_sig_mutex);
+				pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex);
+				pthread_mutex_unlock(&send_thread_sig_mutex);
+			} else if (last_packet_received == 3) { 	// FIN-ACK received
+				send_ACK(arg, seq);
+				pthread_mutex_lock(&info_mutex);
+				global_last_packet_sent = 4;
+				pthread_mutex_unlock(&info_mutex);
+				printf("Four Way Handshake completed\n");
+				// wake up main thread
+				pthread_cond_signal(&app_thread_sig);
+			} else {
+				printf("four_way_handshake error\n");
+			}
 			break;
 		} else {
 			// unknown error
@@ -183,17 +213,6 @@ static void *receive_thread(void *server_arg) {
 	printf("receive_thread started\n");
 	struct arg_list *arg = (struct arg_list *)server_arg;
 	socklen_t addrlen = sizeof(arg->server_addr);
-	// int connection_state;
-	// 0 = three way handshake
-	// 1 = data transmition
-	// 2 = four way handshake
-	// int last_packet_sent;
-	// 0 = SYN
-	// 1 = SYN-ACK
-	// 2 = FIN
-	// 3 = FIN-ACK
-	// 4 = ACK
-	// 5 = DATA
 
 	while (1) {
 		unsigned int seq;
@@ -228,6 +247,7 @@ static void *receive_thread(void *server_arg) {
 			global_last_packet_received = 3;
 			global_seq += seq;
 			pthread_mutex_unlock(&info_mutex);
+			pthread_cond_signal(&send_thread_sig);
 			break;
 			case 4: // ACK
 			printf("ACK recevied\n");
@@ -297,6 +317,24 @@ static void send_ACK(struct arg_list *arg, int seq) {
 		exit(1);
 	}
 	printf("ACK sent\n");
+}
+
+static void send_FIN(struct arg_list *arg, int seq) {
+	// construct mtcp FIN header
+	mtcpheader FIN;
+	FIN.seq = seq;
+	FIN.seq = htonl(FIN.seq);
+	FIN.mode = '2';
+	memcpy(FIN.buffer, &FIN.seq, 4);
+	FIN.buffer[0] = FIN.buffer[0] | (FIN.mode << 4);
+
+	printf("try to send FIN\n");
+	// send SYN to server
+	if(sendto(arg->socket, FIN.buffer, sizeof(FIN.buffer), 0, (struct sockaddr*)&arg->server_addr, (socklen_t)sizeof(arg->server_addr)) <= 0) {
+		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
+		exit(1);
+	}
+	printf("FIN sent\n");
 }
 
 static void send_data(struct arg_list *arg, int seq) {

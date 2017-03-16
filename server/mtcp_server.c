@@ -145,7 +145,6 @@ static void *send_thread(void *client_arg){
 		// send packet
 		if (connection_state == 0) {
 			// perform three way Handshake
-			printf("%d\n", last_flag_received);
 			if (last_flag_received == 0) {
 				// send SYN-ACK to client
 				send_SYN_ACK(arg, seq);
@@ -202,13 +201,11 @@ static void *receive_thread(void *client_arg){
 		seq = ntohl(seq);
 		seq = global_seq;
 
-		printf("Check & Upadate State\n");
 		switch(mode) {
 			case 0: // SYN
 			// when SYN received
 			printf("SYN received\n");
 			pthread_mutex_lock(&info_mutex);
-			printf("change connection_state to 0\n");
 			global_last_packet_received = 0;
 			global_connection_state = 0;
 			pthread_mutex_unlock(&info_mutex);
@@ -263,7 +260,6 @@ static void *receive_thread(void *client_arg){
 
 static void send_SYN_ACK(struct arg_list *arg, int seq) {
 	// construct mtcp SYN-ACK header
-	printf("testing\n");
 	mtcpheader SYN_ACK;
 	SYN_ACK.seq = seq + 1;
 	SYN_ACK.seq = htonl(SYN_ACK.seq);
