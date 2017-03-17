@@ -52,6 +52,9 @@ static void *receive_thread();
 /* Three Way Handshake Function*/
 static void send_SYN_ACK();
 
+/* Data Transmition Function*/
+static void send_ACK();
+
 /* Data Transmition Function */
 static void send_data(int seq);
 
@@ -86,9 +89,7 @@ int mtcp_read(int socket_fd, unsigned char *buf, int buf_len){
 	pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex);
 	pthread_mutex_unlock(&app_thread_sig_mutex);
 
-	if (connection_state == 2) {
-		return 0;	
-	}else if (strlen(buf) == 0){
+	if (strlen(buf) == 0){
 		return 0;
 	} else{
 		return sizeof(mtcp_internal_buffer);
@@ -201,7 +202,7 @@ static void *send_thread(void *client_arg){
 		}
 
 	}
-
+	return 0;
 }
 
 static void *receive_thread(void *client_arg){
@@ -261,7 +262,7 @@ static void *receive_thread(void *client_arg){
 			// when DATA received
 			pthread_mutex_lock(&info_mutex);
 			global_last_packet_received = 5;
-			memcpy(mtcp_internal_buffer, &buff[4], MAX_BUF_SIZE)
+			memcpy(mtcp_internal_buffer, &buff[4], MAX_BUF_SIZE);
 			pthread_mutex_unlock(&info_mutex);
 			pthread_cond_signal(&send_thread_sig);
 			break;
