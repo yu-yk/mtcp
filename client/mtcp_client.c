@@ -95,13 +95,15 @@ int mtcp_write(int socket_fd, unsigned char *buf, int buf_len){
 /* Close Function Call (mtcp Version) */
 void mtcp_close(int socket_fd){
 
+	// wait for data transmition completed
+	pthread_mutex_lock(&app_thread_sig_mutex);
+	pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex);
+	pthread_mutex_unlock(&app_thread_sig_mutex);
+
 	pthread_mutex_lock(&info_mutex);
 	global_connection_state = 2;
 	pthread_mutex_unlock(&info_mutex);
 
-	pthread_mutex_lock(&app_thread_sig_mutex);
-	pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex);
-	pthread_mutex_unlock(&app_thread_sig_mutex);
 
 }
 
