@@ -34,6 +34,9 @@ struct arg_list
 	struct sockaddr_in server_addr;
 };
 
+// global server arg
+struct arg_list server_arg;
+
 /* ThreadID for Sending Thread and Receiving Thread */
 static pthread_t send_thread_pid;
 static pthread_t recv_thread_pid;
@@ -61,7 +64,6 @@ static void send_data();
 void mtcp_connect(int socket_fd, struct sockaddr_in *server_addr){
 
 	// init connect server arg
-	struct arg_list server_arg;
 	server_arg.socket = socket_fd;
 	server_arg.server_addr = *server_addr;
 
@@ -95,15 +97,13 @@ int mtcp_write(int socket_fd, unsigned char *buf, int buf_len){
 /* Close Function Call (mtcp Version) */
 void mtcp_close(int socket_fd){
 
-	// wait for data transmition completed
+	// pthread_mutex_lock(&info_mutex);
+	// global_connection_state = 2;
+	// pthread_mutex_unlock(&info_mutex);
+
 	pthread_mutex_lock(&app_thread_sig_mutex);
 	pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex);
 	pthread_mutex_unlock(&app_thread_sig_mutex);
-
-	pthread_mutex_lock(&info_mutex);
-	global_connection_state = 2;
-	pthread_mutex_unlock(&info_mutex);
-
 
 }
 
@@ -169,6 +169,7 @@ static void *send_thread(void *server_arg) {
 				send_ACK(arg, seq);
 				pthread_mutex_lock(&info_mutex);
 				global_last_packet_sent = 4;
+				global_connection_state = 1;
 				pthread_mutex_unlock(&info_mutex);
 				printf("Three Way Handshake established\n");
 				// wake up main thread and wait for data transmition
@@ -302,6 +303,7 @@ static void send_SYN(struct arg_list *arg, int seq) {
 
 	printf("try to send SYN \n");
 	// send SYN to server
+	printf("socket = %d\n", arg->socket);
 	if(sendto(arg->socket, SYN.buffer, sizeof(SYN.buffer), 0, (struct sockaddr*)&arg->server_addr, (socklen_t)sizeof(arg->server_addr)) <= 0) {
 		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
 		exit(1);
@@ -354,12 +356,13 @@ static void send_data(struct arg_list *arg, int seq) {
 	dataheader.mode = '5';
 	memcpy(dataheader.buffer, &dataheader.seq, 4);
 	memcpy(datapacket_buffer, dataheader.buffer, 4);	// copy header to packet
-	memcpy(&datapacket_buffer[4], &mtcp_internal_buffer[seq], MAX_BUF_SIZE);
+	memcpy(&datapacket_buffer[4], &mtcp_internal_buffer[(seq-1)], MAX_BUF_SIZE);
 
 	printf("try to send data\n");
 	//send data to server
-	if (sendto(arg->socket, datapacket_buffer, sizeof(datapacket_buffer), 0, (struct sockaddr*)&arg->server_addr, (socklen_t)sizeof(arg->server_addr)) <= 0) {
-		printf("Send Error: %s (Error:%d)\n",strerror(errno),errno);
+	printf("socket = %d\n", arg->socket);
+	if(sendto(arg->socket, datapacket_buffer, sizeof(datapacket_buffer), 0, (struct sockaddr*)&arg->server_addr, (socklen_t)sizeof(arg->server_addr)) <= 0) {
+		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
 		exit(1);
 	}
 	printf("Data sent\n");
