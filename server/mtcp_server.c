@@ -10,7 +10,9 @@
 #include <mtcp_common.h>
 
 /* -------------------- Global Variables -------------------- */
-unsigned char *mtcp_internal_buffer[MAX_BUF_SIZE];
+unsigned char mtcp_internal_buffer[5 * MAX_BUF_SIZE];
+unsigned int global_read_buffer_pointer = 0;
+unsigned int global_send_buffer_pointer = 0;
 unsigned int global_connection_state = 0;
 unsigned int global_last_packet_received = -1;
 unsigned int global_last_packet_sent = -1;
@@ -79,13 +81,33 @@ void mtcp_accept(int socket_fd, struct sockaddr_in *client_addr){
 }
 
 int mtcp_read(int socket_fd, unsigned char *buf, int buf_len){
-	//pthread_cond_signal(&send_thread_sig);
+	
+	pthread_mutex_lock(&app_thread_sig_mutex);
+	pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex);
+	pthread_mutex_unlock(&app_thread_sig_mutex);
 
+	if (connection_state == 2) {
+		return 0;	
+	}else if (strlen(buf) == 0){
+		return 0;
+	} else{
+		return sizeof(mtcp_internal_buffer);
+	}
+	// send signal wake up sending thread
+	pthread_cond_signal(&send_thread_sig);
 
-	return 0;
 }
 
 void mtcp_close(int socket_fd){
+
+	//change te connection state 
+	pthread_mutex_lock(&info_mutex);
+	global_connection_state = 2;
+	pthread_mutex_unlock(&info_mutex);
+
+	pthread_mutex_lock(&app_thread_sig_mutex);
+	pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex);
+	pthread_mutex_unlock(&app_thread_sig_mutex);
 
 }
 
@@ -164,6 +186,12 @@ static void *send_thread(void *client_arg){
 				printf("three_way_handshake error\n");
 			}
 		} else if (connection_state == 1) {
+			send_ACK(arg, seq);
+			pthread_mutex_lock(&info_mutex);
+			global_last_packet_sent = 4;
+			pthread_mutex_unlock(&info_mutex);
+
+			pthread_cond_signal(&app_thread_sig);
 			// send or retransmit data packet
 		} else if (connection_state == 2) {
 			// perform four way handshake
@@ -180,13 +208,14 @@ static void *receive_thread(void *client_arg){
 	printf("Receive Thread Start\n");
 	struct arg_list *arg = (struct arg_list *)client_arg;
 	socklen_t addrlen = sizeof(arg->client_addr);
+	memset(mtcp_internal_buffer, 0, 5 * MAX_BUF_SIZE);
 
 	// keep monitoring
 	while (1) {
 		printf("Monitor Socket\n");
 		unsigned int seq;
 		unsigned int mode;
-		unsigned char buff[4];
+		unsigned char buff[MAX_BUF_SIZE+4];
 
 		// monitor for the SYN
 		if(recvfrom(arg->socket, buff, sizeof(buff), 0, (struct sockaddr*)&arg->client_addr, &addrlen) < 0) {
@@ -232,6 +261,7 @@ static void *receive_thread(void *client_arg){
 			// when DATA received
 			pthread_mutex_lock(&info_mutex);
 			global_last_packet_received = 5;
+			memcpy(mtcp_internal_buffer, &buff[4], MAX_BUF_SIZE)
 			pthread_mutex_unlock(&info_mutex);
 			pthread_cond_signal(&send_thread_sig);
 			break;
@@ -256,7 +286,22 @@ static void *receive_thread(void *client_arg){
 	printf("Thread Stop\n");
 }
 
+static void send_ACK(struct arg_list *arg, int seq) {
+	// construct mtcp SYN-ACK header
+	mtcpheader ACK;
+	ACK.seq = seq + sizeof(mtcp_internal_buffer);
+	ACK.seq = htonl(ACK.seq);
+	ACK.mode = '4';
+	memcpy(ACK.buffer, &ACK.seq, 4);
+	ACK.buffer[0] = ACK.buffer[0] | (ACK.mode << 4);
 
+	// send ACK to client
+	if(sendto(arg->socket, ACK.buffer, sizeof(ACK.buffer), 0, (struct sockaddr*)&arg->client_addr, (socklen_t)sizeof(arg->client_addr)) <=0) {
+		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
+		exit(1);
+	}
+	printf("ACK sent\n");
+}
 
 static void send_SYN_ACK(struct arg_list *arg, int seq) {
 	// construct mtcp SYN-ACK header
