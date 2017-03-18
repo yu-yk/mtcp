@@ -122,9 +122,9 @@ void mtcp_close(int socket_fd){
 
 	pthread_join(send_thread_pid,NULL);
 
-	pthread_mutex_lock(&app_thread_sig_mutex);
-	pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex);
-	pthread_mutex_unlock(&app_thread_sig_mutex);
+	// pthread_mutex_lock(&app_thread_sig_mutex);
+	// pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex);
+	// pthread_mutex_unlock(&app_thread_sig_mutex);
 
 	pthread_join(recv_thread_pid,NULL);
 
@@ -285,6 +285,7 @@ static void *receive_thread(void *client_arg){
 			pthread_mutex_lock(&info_mutex);
 			global_last_packet_received = 2;
 			global_connection_state = 2;
+			global_seq = seq;
 			pthread_mutex_unlock(&info_mutex);
 			pthread_cond_signal(&send_thread_sig);
 			break;
@@ -315,7 +316,7 @@ static void *receive_thread(void *client_arg){
 		if(global_connection_state == 2){
 			if (global_last_packet_received == 4){
 				break;
-			}		
+			}
 		}
 
 	}

@@ -114,8 +114,8 @@ void mtcp_close(int socket_fd){
 	// global_connection_state = 2;
 	// pthread_mutex_unlock(&info_mutex);
 
-	pthread_join(&send_thread_pid, NULL);
-	pthread_join(&recv_thread_pid, NULL);
+	pthread_join(send_thread_pid, NULL);
+	pthread_join(recv_thread_pid, NULL);
 
 
 }
@@ -244,7 +244,7 @@ static void *receive_thread(void *server_arg) {
 	printf("receive_thread started\n");
 	struct arg_list *arg = (struct arg_list *)server_arg;
 	socklen_t addrlen = sizeof(arg->server_addr);
-	bool flag = true;
+	int flag = 1;
 
 	while (flag) {
 		unsigned int seq;
@@ -280,7 +280,7 @@ static void *receive_thread(void *server_arg) {
 				global_seq = seq;
 				pthread_mutex_unlock(&info_mutex);
 				pthread_cond_signal(&send_thread_sig);
-				flag = false;
+				flag = 0;
 				break;
 				case 4: // ACK
 				printf("ACK recevied\n\n");
@@ -315,6 +315,7 @@ static void *receive_thread(void *server_arg) {
 		// if 4 way finished break
 
 	}
+	return 0;
 
 }
 
@@ -363,7 +364,7 @@ static void send_FIN(struct arg_list *arg, int seq) {
 	memcpy(FIN.buffer, &FIN.seq, 4);
 	FIN.buffer[0] = FIN.buffer[0] | (FIN.mode << 4);
 
-	printf("try to send FIN\n");
+	printf("try to send FIN with seq = %d\n", seq);
 	// send SYN to server
 	if(sendto(arg->socket, FIN.buffer, sizeof(FIN.buffer), 0, (struct sockaddr*)&arg->server_addr, (socklen_t)sizeof(arg->server_addr)) <= 0) {
 		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
