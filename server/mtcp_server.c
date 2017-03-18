@@ -59,7 +59,7 @@ static void send_SYN_ACK();
 static void send_ACK();
 
 /* Four Way Handshake Function */
-//static void four_way_handshake();
+static void send_FIN_ACK(struct arg_list *arg, int seq);
 
 /* Accept Function Call (mtcp Version) */
 void mtcp_accept(int socket_fd, struct sockaddr_in *client_addr){
@@ -116,14 +116,19 @@ void mtcp_close(int socket_fd){
 	// pthread_mutex_lock(&info_mutex);
 	// global_connection_state = 2;
 	// pthread_mutex_unlock(&info_mutex);
-
-	while (1) {
-		/* code */
-	}
 	pthread_mutex_lock(&app_thread_sig_mutex);
 	pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex);
 	pthread_mutex_unlock(&app_thread_sig_mutex);
 
+	pthread_join(send_thread_pid,NULL);
+
+	pthread_mutex_lock(&app_thread_sig_mutex);
+	pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex);
+	pthread_mutex_unlock(&app_thread_sig_mutex);
+
+	pthread_join(recv_thread_pid,NULL);
+
+	return;
 }
 
 static void *send_thread(void *client_arg){
@@ -209,10 +214,23 @@ static void *send_thread(void *client_arg){
 			pthread_cond_signal(&app_thread_sig);
 			// send or retransmit data packet
 		} else if (connection_state == 2) {
-			// perform four way handshake
-			break;
+			if (last_flag_received == 2) {
+				send_FIN_ACK(arg, seq);
+				pthread_mutex_lock(&info_mutex);
+				global_last_packet_sent = 3;
+				pthread_mutex_unlock(&info_mutex);
+				pthread_cond_signal(&app_thread_sig);
+			} else if (last_flag_received == 4){
+				pthread_mutex_lock(&info_mutex);
+				global_last_packet_received = 4;
+				printf("Four Way Handshake established\n");
+				pthread_mutex_unlock(&info_mutex);
+				pthread_cond_signal(&app_thread_sig);
+				break;
+			}
 		} else {
 			// unknown error
+			printf("unknown error\n");
 		}
 
 	}
@@ -266,7 +284,7 @@ static void *receive_thread(void *client_arg){
 			printf("FIN received\n");
 			pthread_mutex_lock(&info_mutex);
 			global_last_packet_received = 2;
-			// global_connection_state = 2;
+			global_connection_state = 2;
 			pthread_mutex_unlock(&info_mutex);
 			pthread_cond_signal(&send_thread_sig);
 			break;
@@ -294,21 +312,15 @@ static void *receive_thread(void *client_arg){
 			printf("receive switch error\n");
 		}
 
-		// check and update state
-		// pthread_mutex_lock(&info_mutex);
-		// // check last packet sent
-		// if (global_last_packet_sent == 1) {			// SYN-ACK sent
-		// 	global_connection_state = 0;							// state remain three_way_handshake
-		// } else if (global_last_packet_sent == 4) {	// ACK sent
-		// 	global_connection_state = 1;							// state change to data transmition
-		// } else if (global_last_packet_sent == 3) {	// FIN-ACK sent
-		// 	global_connection_state = 2;							// state remian four_way_handshake
-		// }
-
-		// pthread_mutex_unlock(&info_mutex);
+		if(global_connection_state == 2){
+			if (global_last_packet_received == 4){
+				break;
+			}		
+		}
 
 	}
 	printf("Thread Stop\n");
+	return 0;
 }
 
 static void send_ACK(struct arg_list *arg, int seq) {
@@ -345,4 +357,23 @@ static void send_SYN_ACK(struct arg_list *arg, int seq) {
 		exit(1);
 	}
 	printf("SYN-ACK sent\n");
+}
+
+static void send_FIN_ACK(struct arg_list *arg, int seq) {
+	// construct mtcp SYN-ACK header
+	mtcpheader FIN_ACK;
+	FIN_ACK.seq = seq + 1;
+	printf("seq = %d\n", FIN_ACK.seq);
+	FIN_ACK.seq = htonl(FIN_ACK.seq);
+	FIN_ACK.mode = '3';
+	memcpy(FIN_ACK.buffer, &FIN_ACK.seq, 4);
+	FIN_ACK.buffer[0] = FIN_ACK.buffer[0] | (FIN_ACK.mode << 4);
+
+	// send FIN_ACK to client
+	if(sendto(arg->socket, FIN_ACK.buffer, sizeof(FIN_ACK.buffer), 0, (struct sockaddr*)&arg->client_addr, (socklen_t)sizeof(arg->client_addr)) <=0) {
+		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
+		exit(1);
+	}
+	printf("FIN_ACK sent\n\n");
+
 }
