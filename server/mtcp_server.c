@@ -91,16 +91,22 @@ int mtcp_read(int socket_fd, unsigned char *buf, int buf_len){
 	pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex);
 	pthread_mutex_unlock(&app_thread_sig_mutex);
 
-	pthread_mutex_lock(&info_mutex);
-	memcpy(buf, &mtcp_internal_buffer[global_internal_buffer_pointer], global_packet_size-4);
-	global_internal_buffer_pointer += (global_packet_size-4);
-	pthread_mutex_unlock(&info_mutex);
-
-	if ((global_packet_size -4) == 0) {
-		return 0;
+	if ( (global_packet_size-4) < buf_len ) {
+		pthread_mutex_lock(&info_mutex);
+		memcpy(buf, &mtcp_internal_buffer[global_internal_buffer_pointer], global_packet_size-4);
+		global_internal_buffer_pointer += (global_packet_size-4);
+		printf("global_internal_buffer_pointer += %d\n", global_packet_size -4);
+		pthread_mutex_unlock(&info_mutex);
+		return global_packet_size-4;
 	} else {
-		return (global_packet_size -4);
+		pthread_mutex_lock(&info_mutex);
+		memcpy(buf, &mtcp_internal_buffer[global_internal_buffer_pointer], buf_len);
+		global_internal_buffer_pointer += buf_len;
+		printf("global_internal_buffer_pointer += %d\n", buf_len);
+		pthread_mutex_unlock(&info_mutex);
+		return buf_len;
 	}
+
 
 }
 
@@ -172,7 +178,6 @@ static void *send_thread(void *client_arg){
 		seq = global_seq;
 		pthread_mutex_unlock(&info_mutex);
 
-		printf("connection_state = %d \n", connection_state);
 		// send packet
 		if (connection_state == 0) {
 			// perform three way Handshake
@@ -229,6 +234,7 @@ static void *receive_thread(void *client_arg){
 
 		// monitor socket
 		// packet_size = recvfrom(arg->socket, buff, sizeof(buff), 0, (struct sockaddr*)&arg->client_addr, &addrlen);
+
 		if( (global_packet_size = recvfrom(arg->socket, buff, sizeof(buff), 0, (struct sockaddr*)&arg->client_addr, &addrlen)) < 0) {
 			printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
 			exit(1);
@@ -283,7 +289,6 @@ static void *receive_thread(void *client_arg){
 			}
 			pthread_mutex_unlock(&info_mutex);
 			pthread_cond_signal(&send_thread_sig);
-			pthread_cond_signal(&app_thread_sig);
 			break;
 			default:
 			printf("receive switch error\n");
@@ -309,7 +314,9 @@ static void *receive_thread(void *client_arg){
 static void send_ACK(struct arg_list *arg, int seq) {
 	// construct mtcp SYN-ACK header
 	mtcpheader ACK;
+	pthread_mutex_lock(&info_mutex);
 	ACK.seq = seq + global_packet_size - 4;
+	pthread_mutex_unlock(&info_mutex);
 	printf("seq = %d\n", ACK.seq);
 	ACK.seq = htonl(ACK.seq);
 	ACK.mode = '4';
