@@ -90,9 +90,9 @@ int mtcp_read(int socket_fd, unsigned char *buf, int buf_len){
 	pthread_mutex_unlock(&app_thread_sig_mutex);
 
 	printf("mtcp_read\n");
-	printf("strlen(buf) = %lx\n", strlen(buf));
+	printf("strlen(buf) = %lx\n", strlen(mtcp_internal_buffer));
 
-	if (strlen(buf) == 0){
+	if (strlen(mtcp_internal_buffer) == 0){
 		return 0;
 	} else{
 		printf("sizeof(mtcp_internal_buffer) = %lx\n", sizeof(mtcp_internal_buffer));
@@ -178,10 +178,10 @@ static void *send_thread(void *client_arg){
 				pthread_mutex_lock(&info_mutex);
 				global_last_packet_sent = 1;
 				pthread_mutex_unlock(&info_mutex);
-				// wait for ACK
-				// pthread_mutex_lock(&send_thread_sig_mutex);
-				// pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex);
-				// pthread_mutex_unlock(&send_thread_sig_mutex);
+				//wait for ACK
+				pthread_mutex_lock(&send_thread_sig_mutex);
+				pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex);
+				pthread_mutex_unlock(&send_thread_sig_mutex);
 			} else if (last_flag_received == 4){
 				pthread_mutex_lock(&info_mutex);
 				global_connection_state = 1;
@@ -233,7 +233,7 @@ static void *receive_thread(void *client_arg){
 		buff[0] = buff[0] & 0x0F;
 		memcpy(&seq, buff, 4);
 		seq = ntohl(seq);
-		seq = global_seq;
+		global_seq = seq;
 		printf("seq received = %d\n", seq);
 
 		switch(mode) {
