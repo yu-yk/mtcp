@@ -11,8 +11,8 @@
 
 /* -------------------- Global Variables -------------------- */
 unsigned char mtcp_internal_buffer[5 * MAX_BUF_SIZE];
-unsigned int global_read_buffer_pointer = 0;
-unsigned int global_send_buffer_pointer = 0;
+unsigned int global_internal_buffer_pointer = 0;
+unsigned int global_application_buffer_pointer = 0;
 unsigned int global_connection_state = 0;
 unsigned int global_last_packet_received = -1;
 unsigned int global_last_packet_sent = -1;
@@ -86,23 +86,21 @@ void mtcp_accept(int socket_fd, struct sockaddr_in *client_addr){
 
 int mtcp_read(int socket_fd, unsigned char *buf, int buf_len){
 
-
-	memcpy(buf, mtcp_internal_buffer, buf_len);
+	//buf_len each time must be 1000
 	pthread_mutex_lock(&app_thread_sig_mutex);
 	pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex);
 	pthread_mutex_unlock(&app_thread_sig_mutex);
 
-	// printf("mtcp_read\n");
-	// printf("strlen(buf) = %lx\n", strlen(mtcp_internal_buffer));
+	pthread_mutex_lock(&info_mutex);
+	memcpy(buf, &mtcp_internal_buffer[global_internal_buffer_pointer], global_packet_size-4);
+	global_internal_buffer_pointer += (global_packet_size-4);
+	pthread_mutex_unlock(&info_mutex);
 
-	if (strlen(mtcp_internal_buffer) == 0){
+	if ((global_packet_size -4) == 0) {
 		return 0;
-	} else{
-		// printf("sizeof(mtcp_internal_buffer) = %lx\n", sizeof(mtcp_internal_buffer));
-		return sizeof(mtcp_internal_buffer);
+	} else {
+		return (global_packet_size -4);
 	}
-	// send signal wake up sending thread
-	// pthread_cond_signal(&send_thread_sig);
 
 }
 
@@ -241,11 +239,7 @@ static void *receive_thread(void *client_arg){
 		buff[0] = buff[0] & 0x0F;
 		memcpy(&seq, buff, 4);
 		seq = ntohl(seq);
-		pthread_mutex_lock(&info_mutex);
-		if (seq > global_seq) {
-			global_seq = seq;
-		}
-		pthread_mutex_unlock(&info_mutex);
+
 		printf("seq received = %d\n", seq);
 		printf("packet_size = %d\n", global_packet_size);
 
@@ -282,9 +276,14 @@ static void *receive_thread(void *client_arg){
 			// when DATA received
 			pthread_mutex_lock(&info_mutex);
 			global_last_packet_received = 5;
-			memcpy(mtcp_internal_buffer, &buff[4], MAX_BUF_SIZE);
+			if (seq > global_seq) {
+				global_seq = seq;
+				memcpy(&mtcp_internal_buffer[seq-1], &buff[4], global_packet_size-4);
+				// global_internal_buffer_pointer += (global_packet_size-4);
+			}
 			pthread_mutex_unlock(&info_mutex);
 			pthread_cond_signal(&send_thread_sig);
+			pthread_cond_signal(&app_thread_sig);
 			break;
 			default:
 			printf("receive switch error\n");
