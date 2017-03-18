@@ -17,6 +17,7 @@ unsigned int global_write_buffer_pointer = 0;
 unsigned int global_write_count = 0;
 unsigned int global_send_count = 0;
 unsigned int packet_size_array[MAX_BUF_SIZE];
+unsigned int global_total_data_length = 0;
 // unsigned int global_send_start_buffer_pointer = 0;
 // unsigned int global_send_end_buffer_pointer = 0;
 unsigned int global_connection_state = 0;
@@ -90,9 +91,12 @@ int mtcp_write(int socket_fd, unsigned char *buf, int buf_len){
 	// printf("write position %d\n", global_write_buffer_pointer);
 	// printf("global_write_buffer_pointer = %d\n", global_write_buffer_pointer);
 	memcpy(&mtcp_internal_buffer[global_write_buffer_pointer], buf, buf_len); // keep write to the new space
+	pthread_mutex_lock(&info_mutex);
 	global_write_buffer_pointer += buf_len;
 	packet_size_array[global_write_count] = buf_len;
 	global_write_count++;
+	global_total_data_length += buf_len;
+	pthread_mutex_unlock(&info_mutex);
 	// send signal wake up sending thread
 	pthread_cond_signal(&send_thread_sig);
 
@@ -126,6 +130,7 @@ static void *send_thread(void *server_arg) {
 	// 5 = DATA
 	int seq;
 	int send_count;
+	int total_data_length;
 
 	while (1) {
 
@@ -154,6 +159,7 @@ static void *send_thread(void *server_arg) {
 		}
 		send_count = global_send_count;
 		seq = global_seq;
+		total_data_length = global_total_data_length;
 		pthread_mutex_unlock(&info_mutex);
 
 
@@ -186,11 +192,18 @@ static void *send_thread(void *server_arg) {
 			}
 		} else if (connection_state == 1) {					// data transmition state
 			// send or retransmit data packet
-			send_data(arg, seq, packet_size_array[send_count]);
-			pthread_mutex_lock(&info_mutex);
-			global_last_packet_sent = 5;
-			printf("data packet with seq = %d sent\n", seq);
-			pthread_mutex_unlock(&info_mutex);
+			if (seq < total_data_length) {
+				send_data(arg, seq, packet_size_array[send_count]);
+				pthread_mutex_lock(&info_mutex);
+				global_last_packet_sent = 5;
+				printf("data packet with seq = %d sent\n", seq);
+				pthread_mutex_unlock(&info_mutex);
+			} else {
+				pthread_mutex_lock(&send_thread_sig_mutex);
+				pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex);
+				pthread_mutex_unlock(&send_thread_sig_mutex);
+			}
+
 		} else if (connection_state == 2) {					// four way handshake state
 			// perform four way handshake
 			if (last_packet_received == 4) {					// ACK received
@@ -242,37 +255,38 @@ static void *receive_thread(void *server_arg) {
 		buff[0] = buff[0] & 0x0F;
 		memcpy(&seq, buff, 4);
 		seq = ntohl(seq);
-
-		switch(mode) {
-			case 1: // SYN-ACK
-			printf("SYN-ACK recevied\n");
-			// when SYN-ACK received
-			pthread_mutex_lock(&info_mutex);
-			global_last_packet_received = 1;
-			global_seq = seq;
-			pthread_mutex_unlock(&info_mutex);
-			pthread_cond_signal(&send_thread_sig);
-			break;
-			case 3: // FIN-ACK
-			printf("FIN-ACK recevied\n");
-			// when FIN-ACK received
-			pthread_mutex_lock(&info_mutex);
-			global_last_packet_received = 3;
-			global_seq = seq;
-			pthread_mutex_unlock(&info_mutex);
-			pthread_cond_signal(&send_thread_sig);
-			break;
-			case 4: // ACK
-			printf("ACK recevied\n");
-			// when ACK received
-			pthread_mutex_lock(&info_mutex);
-			global_last_packet_received = 4;
-			global_seq = seq;
-			global_send_count++;
-			pthread_mutex_unlock(&info_mutex);
-			break;
-			default:
-			printf("receive switch error\n");
+		if ( seq > global_seq ) {
+			switch(mode) {
+				case 1: // SYN-ACK
+				printf("SYN-ACK recevied\n");
+				// when SYN-ACK received
+				pthread_mutex_lock(&info_mutex);
+				global_last_packet_received = 1;
+				global_seq = seq;
+				pthread_mutex_unlock(&info_mutex);
+				pthread_cond_signal(&send_thread_sig);
+				break;
+				case 3: // FIN-ACK
+				printf("FIN-ACK recevied\n");
+				// when FIN-ACK received
+				pthread_mutex_lock(&info_mutex);
+				global_last_packet_received = 3;
+				global_seq = seq;
+				pthread_mutex_unlock(&info_mutex);
+				pthread_cond_signal(&send_thread_sig);
+				break;
+				case 4: // ACK
+				printf("ACK recevied\n\n");
+				// when ACK received
+				pthread_mutex_lock(&info_mutex);
+				global_last_packet_received = 4;
+				global_seq = seq;
+				global_send_count++;
+				pthread_mutex_unlock(&info_mutex);
+				break;
+				default:
+				printf("receive switch error\n");
+			}
 		}
 
 		// // check and update state
