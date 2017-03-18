@@ -57,11 +57,8 @@ static void send_SYN_ACK();
 /* Data Transmition Function*/
 static void send_ACK();
 
-/* Data Transmition Function */
-static void send_data(int seq);
-
 /* Four Way Handshake Function */
-static void four_way_handshake();
+//static void four_way_handshake();
 
 /* Accept Function Call (mtcp Version) */
 void mtcp_accept(int socket_fd, struct sockaddr_in *client_addr){
@@ -80,6 +77,8 @@ void mtcp_accept(int socket_fd, struct sockaddr_in *client_addr){
 	pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex); // wait
 	pthread_mutex_unlock(&app_thread_sig_mutex);
 
+
+
 	return;
 
 }
@@ -90,9 +89,13 @@ int mtcp_read(int socket_fd, unsigned char *buf, int buf_len){
 	pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex);
 	pthread_mutex_unlock(&app_thread_sig_mutex);
 
+	printf("mtcp_read\n");
+	printf("strlen(buf) = %lx\n", strlen(buf));
+
 	if (strlen(buf) == 0){
 		return 0;
 	} else{
+		printf("sizeof(mtcp_internal_buffer) = %lx\n", sizeof(mtcp_internal_buffer));
 		return sizeof(mtcp_internal_buffer);
 	}
 	// send signal wake up sending thread
@@ -138,9 +141,9 @@ static void *send_thread(void *client_arg){
 	*************************************************************************/
 	while (1) {
 		sleep(1); // time out
-
 		// check state
 		pthread_mutex_lock(&info_mutex);
+
 		if (global_connection_state == 0) {
 			connection_state = 0;
 		} else if (global_connection_state == 1) {
@@ -176,9 +179,9 @@ static void *send_thread(void *client_arg){
 				global_last_packet_sent = 1;
 				pthread_mutex_unlock(&info_mutex);
 				// wait for ACK
-				pthread_mutex_lock(&send_thread_sig_mutex);
-				pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex);
-				pthread_mutex_unlock(&send_thread_sig_mutex);
+				// pthread_mutex_lock(&send_thread_sig_mutex);
+				// pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex);
+				// pthread_mutex_unlock(&send_thread_sig_mutex);
 			} else if (last_flag_received == 4){
 				pthread_mutex_lock(&info_mutex);
 				global_connection_state = 1;
@@ -214,7 +217,7 @@ static void *receive_thread(void *client_arg){
 
 	// keep monitoring
 	while (1) {
-		printf("Monitor Socket\n");
+	
 		unsigned int seq;
 		unsigned int mode;
 		unsigned char buff[MAX_BUF_SIZE+4];
@@ -231,6 +234,7 @@ static void *receive_thread(void *client_arg){
 		memcpy(&seq, buff, 4);
 		seq = ntohl(seq);
 		seq = global_seq;
+		printf("seq received = %d\n", seq);
 
 		switch(mode) {
 			case 0: // SYN
@@ -272,17 +276,17 @@ static void *receive_thread(void *client_arg){
 		}
 
 		// check and update state
-		pthread_mutex_lock(&info_mutex);
-		// check last packet sent
-		if (global_last_packet_sent == 1) {			// SYN-ACK sent
-			global_connection_state = 0;							// state remain three_way_handshake
-		} else if (global_last_packet_sent == 4) {	// ACK sent
-			global_connection_state = 1;							// state change to data transmition
-		} else if (global_last_packet_sent == 3) {	// FIN-ACK sent
-			global_connection_state = 2;							// state remian four_way_handshake
-		}
+		// pthread_mutex_lock(&info_mutex);
+		// // check last packet sent
+		// if (global_last_packet_sent == 1) {			// SYN-ACK sent
+		// 	global_connection_state = 0;							// state remain three_way_handshake
+		// } else if (global_last_packet_sent == 4) {	// ACK sent
+		// 	global_connection_state = 1;							// state change to data transmition
+		// } else if (global_last_packet_sent == 3) {	// FIN-ACK sent
+		// 	global_connection_state = 2;							// state remian four_way_handshake
+		// }
 
-		pthread_mutex_unlock(&info_mutex);
+		// pthread_mutex_unlock(&info_mutex);
 
 	}
 	printf("Thread Stop\n");
@@ -297,6 +301,7 @@ static void send_ACK(struct arg_list *arg, int seq) {
 	memcpy(ACK.buffer, &ACK.seq, 4);
 	ACK.buffer[0] = ACK.buffer[0] | (ACK.mode << 4);
 
+	printf("seq = %d\n", ACK.seq);
 	// send ACK to client
 	if(sendto(arg->socket, ACK.buffer, sizeof(ACK.buffer), 0, (struct sockaddr*)&arg->client_addr, (socklen_t)sizeof(arg->client_addr)) <=0) {
 		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
@@ -313,7 +318,6 @@ static void send_SYN_ACK(struct arg_list *arg, int seq) {
 	SYN_ACK.mode = '1';
 	memcpy(SYN_ACK.buffer, &SYN_ACK.seq, 4);
 	SYN_ACK.buffer[0] = SYN_ACK.buffer[0] | (SYN_ACK.mode << 4);
-
 	// send SYN-ACK to client
 	if(sendto(arg->socket, SYN_ACK.buffer, sizeof(SYN_ACK.buffer), 0, (struct sockaddr*)&arg->client_addr, (socklen_t)sizeof(arg->client_addr)) <=0) {
 		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);

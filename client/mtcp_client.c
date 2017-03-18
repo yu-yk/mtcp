@@ -355,9 +355,10 @@ static void send_data(struct arg_list *arg, int seq) {
 	dataheader.seq = htonl(dataheader.seq);
 	dataheader.mode = '5';
 	memcpy(dataheader.buffer, &dataheader.seq, 4);
+	dataheader.buffer[0] = dataheader.buffer[0] | (dataheader.mode << 4);
 	memcpy(datapacket_buffer, dataheader.buffer, 4);	// copy header to packet
 	memcpy(&datapacket_buffer[4], &mtcp_internal_buffer[(seq-1)], MAX_BUF_SIZE);
-
+	printf("dataheader.mode = %c\n", dataheader.mode);
 	printf("try to send data\n");
 	//send data to server
 	printf("socket = %d\n", arg->socket);
