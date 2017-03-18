@@ -107,13 +107,16 @@ int mtcp_write(int socket_fd, unsigned char *buf, int buf_len){
 /* Close Function Call (mtcp Version) */
 void mtcp_close(int socket_fd){
 
+	pthread_mutex_lock(&app_thread_sig_mutex);
+	pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex);
+	pthread_mutex_unlock(&app_thread_sig_mutex);
 	// pthread_mutex_lock(&info_mutex);
 	// global_connection_state = 2;
 	// pthread_mutex_unlock(&info_mutex);
 
-	pthread_mutex_lock(&app_thread_sig_mutex);
-	pthread_cond_wait(&app_thread_sig, &app_thread_sig_mutex);
-	pthread_mutex_unlock(&app_thread_sig_mutex);
+	pthread_join(&send_thread_pid, NULL);
+	pthread_join(&recv_thread_pid, NULL);
+
 
 }
 
@@ -199,9 +202,11 @@ static void *send_thread(void *server_arg) {
 				printf("data packet with seq = %d sent\n", seq);
 				pthread_mutex_unlock(&info_mutex);
 			} else {
-				pthread_mutex_lock(&send_thread_sig_mutex);
-				pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex);
-				pthread_mutex_unlock(&send_thread_sig_mutex);
+				// wake up main thread perform close
+				pthread_cond_signal(&app_thread_sig);
+				pthread_mutex_lock(&info_mutex);
+				global_connection_state = 2;
+				pthread_mutex_unlock(&info_mutex);
 			}
 
 		} else if (connection_state == 2) {					// four way handshake state
@@ -223,10 +228,10 @@ static void *send_thread(void *server_arg) {
 				printf("Four Way Handshake completed\n");
 				// wake up main thread
 				pthread_cond_signal(&app_thread_sig);
+				break;
 			} else {
 				printf("four_way_handshake error\n");
 			}
-			break;
 		} else {
 			// unknown error
 		}
@@ -239,8 +244,9 @@ static void *receive_thread(void *server_arg) {
 	printf("receive_thread started\n");
 	struct arg_list *arg = (struct arg_list *)server_arg;
 	socklen_t addrlen = sizeof(arg->server_addr);
+	bool flag = true;
 
-	while (1) {
+	while (flag) {
 		unsigned int seq;
 		unsigned int mode;
 		unsigned char buff[4];
@@ -274,6 +280,7 @@ static void *receive_thread(void *server_arg) {
 				global_seq = seq;
 				pthread_mutex_unlock(&info_mutex);
 				pthread_cond_signal(&send_thread_sig);
+				flag = false;
 				break;
 				case 4: // ACK
 				printf("ACK recevied\n\n");
