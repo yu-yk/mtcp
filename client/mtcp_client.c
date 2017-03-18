@@ -87,6 +87,7 @@ void mtcp_connect(int socket_fd, struct sockaddr_in *server_addr){
 
 /* Write Function Call (mtcp Version) */
 int mtcp_write(int socket_fd, unsigned char *buf, int buf_len){
+	// printf("mtcp_write running\n");
 	// write message to internal buffer
 	// printf("write position %d\n", global_write_buffer_pointer);
 	// printf("global_write_buffer_pointer = %d\n", global_write_buffer_pointer);
@@ -98,7 +99,9 @@ int mtcp_write(int socket_fd, unsigned char *buf, int buf_len){
 	global_total_data_length += buf_len;
 	pthread_mutex_unlock(&info_mutex);
 	// send signal wake up sending thread
+	// printf("mtcp_write wake up send thread\n");
 	pthread_cond_signal(&send_thread_sig);
+	// printf("mtcp_write wake up send thread after\n");
 
 	return buf_len;
 
@@ -185,18 +188,24 @@ static void *send_thread(void *server_arg) {
 				global_connection_state = 1;
 				pthread_mutex_unlock(&info_mutex);
 				printf("Three Way Handshake established\n");
+				printf("global_connection_state = %d\n", global_connection_state);
 				// wake up main thread and wait for data transmition
 				pthread_cond_signal(&app_thread_sig);
-				pthread_mutex_lock(&send_thread_sig_mutex);
-				pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex);
-				pthread_mutex_unlock(&send_thread_sig_mutex);
+				// printf("send_thread sleep after wake up main_thread\n");
+				// pthread_mutex_lock(&send_thread_sig_mutex);
+				// pthread_cond_wait(&send_thread_sig, &send_thread_sig_mutex);
+				// pthread_mutex_unlock(&send_thread_sig_mutex);
+				// printf("send_thread woke for data trans\n");
 			} else {
 				printf("three_way_handshake error\n");
 			}
 		} else if (connection_state == 1) {					// data transmition state
 			// send or retransmit data packet
+			printf("connection_state == 1\n");
 			if (seq < total_data_length) {
+				printf("before send_data\n");
 				send_data(arg, seq, packet_size_array[send_count]);
+				printf("after send_data\n");
 				pthread_mutex_lock(&info_mutex);
 				global_last_packet_sent = 5;
 				printf("data packet with seq = %d sent\n", seq);
@@ -376,6 +385,7 @@ static void send_FIN(struct arg_list *arg, int seq) {
 static void send_data(struct arg_list *arg, int seq, int packet_size) {
 	unsigned char datapacket_buffer[packet_size+4];
 	// construct mtcp data header
+	printf("inside send_data\n");
 	mtcpheader dataheader;
 	dataheader.seq = seq;
 	dataheader.seq = htonl(dataheader.seq);
