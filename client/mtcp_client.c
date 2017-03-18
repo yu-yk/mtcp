@@ -14,7 +14,11 @@
 /* -------------------- Global Variables -------------------- */
 unsigned char mtcp_internal_buffer[5*MAX_BUF_SIZE];
 unsigned int global_write_buffer_pointer = 0;
-// unsigned int global_send_buffer_pointer = 0;
+unsigned int global_write_count = 0;
+unsigned int global_send_count = 0;
+unsigned int packet_size_array[MAX_BUF_SIZE];
+// unsigned int global_send_start_buffer_pointer = 0;
+// unsigned int global_send_end_buffer_pointer = 0;
 unsigned int global_connection_state = 0;
 unsigned int global_last_packet_received = -1;
 unsigned int global_last_packet_sent = -1;
@@ -83,10 +87,12 @@ void mtcp_connect(int socket_fd, struct sockaddr_in *server_addr){
 /* Write Function Call (mtcp Version) */
 int mtcp_write(int socket_fd, unsigned char *buf, int buf_len){
 	// write message to internal buffer
-	printf("write position %d\n", global_write_buffer_pointer);
-	printf("global_write_buffer_pointer = %d\n", global_write_buffer_pointer);
+	// printf("write position %d\n", global_write_buffer_pointer);
+	// printf("global_write_buffer_pointer = %d\n", global_write_buffer_pointer);
 	memcpy(&mtcp_internal_buffer[global_write_buffer_pointer], buf, buf_len); // keep write to the new space
 	global_write_buffer_pointer += buf_len;
+	packet_size_array[global_write_count] = buf_len;
+	global_write_count++;
 	// send signal wake up sending thread
 	pthread_cond_signal(&send_thread_sig);
 
@@ -111,9 +117,6 @@ static void *send_thread(void *server_arg) {
 	printf("send_thread started\n");
 	struct arg_list *arg = (struct arg_list *)server_arg;
 	int connection_state;
-	// 0 = three way handshake
-	// 1 = data transmition
-	// 2 = four way handshake
 	int last_packet_received;
 	// 0 = SYN
 	// 1 = SYN-ACK
@@ -122,6 +125,7 @@ static void *send_thread(void *server_arg) {
 	// 4 = ACK
 	// 5 = DATA
 	int seq;
+	int send_count;
 
 	while (1) {
 
@@ -148,7 +152,7 @@ static void *send_thread(void *server_arg) {
 		} else {
 			last_packet_received = -1;										// nothing received yet
 		}
-
+		send_count = global_send_count;
 		seq = global_seq;
 		pthread_mutex_unlock(&info_mutex);
 
@@ -182,7 +186,7 @@ static void *send_thread(void *server_arg) {
 			}
 		} else if (connection_state == 1) {					// data transmition state
 			// send or retransmit data packet
-			send_data(arg, seq);
+			send_data(arg, seq, packet_size_array[send_count]);
 			pthread_mutex_lock(&info_mutex);
 			global_last_packet_sent = 5;
 			printf("data packet with seq = %d sent\n", seq);
@@ -264,27 +268,28 @@ static void *receive_thread(void *server_arg) {
 			pthread_mutex_lock(&info_mutex);
 			global_last_packet_received = 4;
 			global_seq = seq;
+			global_send_count++;
 			pthread_mutex_unlock(&info_mutex);
 			break;
 			default:
 			printf("receive switch error\n");
 		}
 
-		// check and update state
-		pthread_mutex_lock(&info_mutex);
-		// check last packet sent
-		if (global_last_packet_sent == 0) {					// SYN sent
-			global_connection_state = 0;							// state remain three_way_handshake
-		} else if (global_last_packet_sent == 4) {	// ACK sent
-			global_connection_state = 1;							// state change to data transmition
-		} else if (global_last_packet_sent == 5) {	// DATA sent
-			global_connection_state = 1;							// state remian data transmition
-		} else if (global_last_packet_sent == 2) {	// FIN sent
-			global_connection_state = 2;							// state remian four_way_handshake
-		} else if (global_last_packet_sent == -1) {
-			global_connection_state = -1;
-		}
-		pthread_mutex_unlock(&info_mutex);
+		// // check and update state
+		// pthread_mutex_lock(&info_mutex);
+		// // check last packet sent
+		// if (global_last_packet_sent == 0) {					// SYN sent
+		// 	global_connection_state = 0;							// state remain three_way_handshake
+		// } else if (global_last_packet_sent == 4) {	// ACK sent
+		// 	global_connection_state = 1;							// state change to data transmition
+		// } else if (global_last_packet_sent == 5) {	// DATA sent
+		// 	global_connection_state = 1;							// state remian data transmition
+		// } else if (global_last_packet_sent == 2) {	// FIN sent
+		// 	global_connection_state = 2;							// state remian four_way_handshake
+		// } else if (global_last_packet_sent == -1) {
+		// 	global_connection_state = -1;
+		// }
+		// pthread_mutex_unlock(&info_mutex);
 
 		// if 4 way finished break
 
@@ -303,7 +308,6 @@ static void send_SYN(struct arg_list *arg, int seq) {
 
 	printf("try to send SYN \n");
 	// send SYN to server
-	printf("socket = %d\n", arg->socket);
 	if(sendto(arg->socket, SYN.buffer, sizeof(SYN.buffer), 0, (struct sockaddr*)&arg->server_addr, (socklen_t)sizeof(arg->server_addr)) <= 0) {
 		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
 		exit(1);
@@ -347,8 +351,8 @@ static void send_FIN(struct arg_list *arg, int seq) {
 	printf("FIN sent\n");
 }
 
-static void send_data(struct arg_list *arg, int seq) {
-	unsigned char datapacket_buffer[MAX_BUF_SIZE+4]; // MSS
+static void send_data(struct arg_list *arg, int seq, int packet_size) {
+	unsigned char datapacket_buffer[packet_size+4];
 	// construct mtcp data header
 	mtcpheader dataheader;
 	dataheader.seq = seq;
@@ -357,14 +361,10 @@ static void send_data(struct arg_list *arg, int seq) {
 	memcpy(dataheader.buffer, &dataheader.seq, 4);
 	dataheader.buffer[0] = dataheader.buffer[0] | (dataheader.mode << 4);
 	memcpy(datapacket_buffer, dataheader.buffer, 4);	// copy header to packet
-	memcpy(&datapacket_buffer[4], &mtcp_internal_buffer[(seq-1)], MAX_BUF_SIZE);
-	printf("dataheader.mode = %c\n", dataheader.mode);
-	printf("try to send data\n");
+	memcpy(&datapacket_buffer[4], &mtcp_internal_buffer[(seq-1)], packet_size);
 	//send data to server
-	printf("socket = %d\n", arg->socket);
 	if(sendto(arg->socket, datapacket_buffer, sizeof(datapacket_buffer), 0, (struct sockaddr*)&arg->server_addr, (socklen_t)sizeof(arg->server_addr)) <= 0) {
 		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
 		exit(1);
 	}
-	printf("Data sent\n");
 }
